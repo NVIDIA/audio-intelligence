@@ -1,5 +1,6 @@
 import gc
 import platform
+import os
 
 import numpy as np
 import gradio as gr
@@ -7,7 +8,7 @@ import json
 import torch
 import torchaudio
 
-from aeiou.viz import audio_spectrogram_image
+from stable_audio_tools.interface.aeiou import audio_spectrogram_image
 from einops import rearrange
 from safetensors.torch import load_file
 from torch.nn import functional as F
@@ -16,59 +17,60 @@ from torchaudio import transforms as T
 from ..inference.generation import generate_diffusion_cond, generate_diffusion_uncond
 from ..models.factory import create_model_from_config
 from ..models.pretrained import get_pretrained_model
-from ..models.utils import load_ckpt_state_dict
+from ..models.utils import load_ckpt_state_dict, remove_weight_norm_from_model
 from ..inference.utils import prepare_audio
 from ..training.utils import copy_state_dict
 
+# global sample_rate and sample_size vars. This is useful for overwriting model_config
+# ex: extrapolate 10-sec only trained model to 20-sec. Since ours used RoPE it supports arbitrary length
 model = None
-sample_rate = 32000
-sample_size = 1920000
+sample_rate = 44100
+sample_size = 441000
 
-def load_model(model_config=None, model_ckpt_path=None, pretrained_name=None, pretransform_ckpt_path=None, device="cuda", model_half=False):
-    global model, sample_rate, sample_size
+def get_local_pretrained_model(model_ckpt_path: str, strict: bool=True):
+    """
+    Load a model from a local checkpoint file.
     
-    if pretrained_name is not None:
-        print(f"Loading pretrained model {pretrained_name}")
-        model, model_config = get_pretrained_model(pretrained_name)
-
-    elif model_config is not None and model_ckpt_path is not None:
-        print(f"Creating model from config")
-        model = create_model_from_config(model_config)
-
-        print(f"Loading model checkpoint from {model_ckpt_path}")
-        # Load checkpoint
-        copy_state_dict(model, load_ckpt_state_dict(model_ckpt_path))
-        #model.load_state_dict(load_ckpt_state_dict(model_ckpt_path))
-
-    sample_rate = model_config["sample_rate"]
-    sample_size = model_config["sample_size"]
-
-    if pretransform_ckpt_path is not None:
-        print(f"Loading pretransform checkpoint from {pretransform_ckpt_path}")
-        model.pretransform.load_state_dict(load_ckpt_state_dict(pretransform_ckpt_path), strict=False)
-        print(f"Done loading pretransform")
-
-    model.to(device).eval().requires_grad_(False)
-
-    if model_half:
-        model.to(torch.float16)
+    Args:
+        model_ckpt_path: Path to the model checkpoint file (.ckpt or .safetensors)
+        strict: Whether to strictly enforce that the keys in state_dict match the keys in model
         
-    print(f"Done loading model")
-
+    Returns:
+        model: The loaded model
+        model_config: The model configuration
+    """
+    config_path = os.path.join(os.path.dirname(model_ckpt_path), "config.json")
+    
+    with open(config_path) as f:
+        config = json.load(f)
+        
+    try: # internal models has model_config within "model_config key"
+        model_config = config["model_config"]
+    except KeyError: # public model from stability json config itself is model_config
+        model_config = config
+        
+    model = create_model_from_config(model_config)
+    
+    if model_config.get("remove_pretransform_weight_norm", ''):
+        remove_weight_norm_from_model(model.pretransform)
+        
+    model.load_state_dict(load_ckpt_state_dict(model_ckpt_path), strict=strict)
+    
     return model, model_config
+
 
 def generate_cond(
         prompt,
         negative_prompt=None,
         seconds_start=0,
-        seconds_total=30,
-        cfg_scale=6.0,
-        steps=250,
+        seconds_total=10,
+        cfg_scale=3.5,
+        steps=100,
         preview_every=None,
         seed=-1,
-        sampler_type="dpmpp-3m-sde",
-        sigma_min=0.03,
-        sigma_max=1000,
+        sampler_type="euler",
+        sigma_min=None,
+        sigma_max=1.0,
         cfg_rescale=0.0,
         use_init=False,
         init_audio=None,
@@ -96,10 +98,20 @@ def generate_cond(
         preview_every = None
 
     # Return fake stereo audio
-    conditioning = [{"prompt": prompt, "seconds_start": seconds_start, "seconds_total": seconds_total}] * batch_size
+    conditioning = [{
+        "prompt": prompt, 
+        "prompt_global": prompt, 
+        "seconds_start": seconds_start, 
+        "seconds_total": seconds_total
+        }] * batch_size
 
     if negative_prompt:
-        negative_conditioning = [{"prompt": negative_prompt, "seconds_start": seconds_start, "seconds_total": seconds_total}] * batch_size
+        negative_conditioning = [{
+            "prompt": negative_prompt, 
+            "prompt_global": negative_prompt,
+            "seconds_start": seconds_start, 
+            "seconds_total": seconds_total
+        }] * batch_size
     else:
         negative_conditioning = None
         
@@ -166,36 +178,37 @@ def generate_cond(
         mask_args = None 
 
     # Do the audio generation
-    audio = generate_diffusion_cond(
-        model, 
-        conditioning=conditioning,
-        negative_conditioning=negative_conditioning,
-        steps=steps,
-        cfg_scale=cfg_scale,
-        batch_size=batch_size,
-        sample_size=input_sample_size,
-        sample_rate=sample_rate,
-        seed=seed,
-        device=device,
-        sampler_type=sampler_type,
-        sigma_min=sigma_min,
-        sigma_max=sigma_max,
-        init_audio=init_audio,
-        init_noise_level=init_noise_level,
-        mask_args = mask_args,
-        callback = progress_callback if preview_every is not None else None,
-        scale_phi = cfg_rescale
-    )
+    with torch.inference_mode():
+        audio = generate_diffusion_cond(
+            model, 
+            conditioning=conditioning,
+            negative_conditioning=negative_conditioning,
+            steps=steps,
+            cfg_scale=cfg_scale,
+            batch_size=batch_size,
+            sample_size=input_sample_size,
+            sample_rate=sample_rate,
+            seed=seed,
+            device=device,
+            sampler_type=sampler_type,
+            sigma_min=sigma_min,
+            sigma_max=sigma_max,
+            init_audio=init_audio,
+            init_noise_level=init_noise_level,
+            mask_args = mask_args,
+            callback = progress_callback if preview_every is not None else None,
+            scale_phi = cfg_rescale
+        )
 
     # Convert to WAV file
     audio = rearrange(audio, "b d n -> d (b n)")
     audio = audio.to(torch.float32).div(torch.max(torch.abs(audio))).clamp(-1, 1).mul(32767).to(torch.int16).cpu()
-    torchaudio.save("output.wav", audio, sample_rate)
+    torchaudio.save("tmp/output.wav", audio, sample_rate)
 
     # Let's look at a nice spectrogram too
     audio_spectrogram = audio_spectrogram_image(audio, sample_rate=sample_rate)
 
-    return ("output.wav", [audio_spectrogram, *preview_images])
+    return ("tmp/output.wav", [audio_spectrogram, *preview_images])
 
 def generate_uncond(
         steps=250,
@@ -336,7 +349,7 @@ def create_uncond_sampling_ui(model_config):
         with gr.Column():            
             with gr.Row():
                 # Steps slider
-                steps_slider = gr.Slider(minimum=1, maximum=500, step=1, value=100, label="Steps")
+                steps_slider = gr.Slider(minimum=1, maximum=500, step=1, value=50, label="Steps")
 
             with gr.Accordion("Sampler params", open=False):
             
@@ -345,14 +358,15 @@ def create_uncond_sampling_ui(model_config):
 
             # Sampler params
                 with gr.Row():
-                    sampler_type_dropdown = gr.Dropdown(["dpmpp-2m-sde", "dpmpp-3m-sde", "k-heun", "k-lms", "k-dpmpp-2s-ancestral", "k-dpm-2", "k-dpm-fast"], label="Sampler type", value="dpmpp-3m-sde")
-                    sigma_min_slider = gr.Slider(minimum=0.0, maximum=2.0, step=0.01, value=0.03, label="Sigma min")
-                    sigma_max_slider = gr.Slider(minimum=0.0, maximum=1000.0, step=0.1, value=500, label="Sigma max")
+                    # sampler_type_dropdown = gr.Dropdown(["euler", "heun", "dpmpp-2m-sde", "dpmpp-3m-sde", "k-heun", "k-lms", "k-dpmpp-2s-ancestral", "k-dpm-2", "k-dpm-fast"], label="Sampler type", value="heun")
+                    sampler_type_dropdown = gr.Dropdown(["euler", "heun"], label="Sampler type", value="euler")
+                    sigma_min_slider = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=0.0, label="Sigma min")
+                    sigma_max_slider = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=1.0, label="Sigma max")
 
             with gr.Accordion("Init audio", open=False):
                 init_audio_checkbox = gr.Checkbox(label="Use init audio")
                 init_audio_input = gr.Audio(label="Init audio")
-                init_noise_level_slider = gr.Slider(minimum=0.0, maximum=100.0, step=0.01, value=0.1, label="Init noise level")
+                init_noise_level_slider = gr.Slider(minimum=0.1, maximum=1.0, step=0.01, value=0.75, label="Init noise level")
 
         with gr.Column():
             audio_output = gr.Audio(label="Output audio", interactive=False)
@@ -400,18 +414,18 @@ def create_sampling_ui(model_config, inpainting=False):
         with gr.Column():
             with gr.Row(visible = has_seconds_start or has_seconds_total):
                 # Timing controls
-                seconds_start_slider = gr.Slider(minimum=0, maximum=512, step=1, value=0, label="Seconds start", visible=has_seconds_start)
-                seconds_total_slider = gr.Slider(minimum=0, maximum=512, step=1, value=sample_size//sample_rate, label="Seconds total", visible=has_seconds_total)
+                seconds_start_slider = gr.Slider(minimum=0, maximum=10, step=1, value=0, label="Seconds start", visible=has_seconds_start)
+                seconds_total_slider = gr.Slider(minimum=0, maximum=sample_size // sample_rate, step=1, value=10, label="Seconds total", visible=has_seconds_total)
             
             with gr.Row():
                 # Steps slider
-                steps_slider = gr.Slider(minimum=1, maximum=500, step=1, value=100, label="Steps")
+                steps_slider = gr.Slider(minimum=10, maximum=500, step=1, value=100, label="Steps")
 
                 # Preview Every slider
-                preview_every_slider = gr.Slider(minimum=0, maximum=100, step=1, value=0, label="Preview Every")
+                preview_every_slider = gr.Slider(minimum=0, maximum=100, step=1, value=0, label="Preview Every", visible=False)
 
                 # CFG scale 
-                cfg_scale_slider = gr.Slider(minimum=0.0, maximum=25.0, step=0.1, value=7.0, label="CFG scale")
+                cfg_scale_slider = gr.Slider(minimum=1.0, maximum=10.0, step=0.1, value=3.5, label="CFG scale")
 
             with gr.Accordion("Sampler params", open=False):
             
@@ -420,19 +434,20 @@ def create_sampling_ui(model_config, inpainting=False):
 
                 # Sampler params
                 with gr.Row():
-                    sampler_type_dropdown = gr.Dropdown(["dpmpp-2m-sde", "dpmpp-3m-sde", "k-heun", "k-lms", "k-dpmpp-2s-ancestral", "k-dpm-2", "k-dpm-fast"], label="Sampler type", value="dpmpp-3m-sde")
-                    sigma_min_slider = gr.Slider(minimum=0.0, maximum=2.0, step=0.01, value=0.03, label="Sigma min")
-                    sigma_max_slider = gr.Slider(minimum=0.0, maximum=1000.0, step=0.1, value=500, label="Sigma max")
-                    cfg_rescale_slider = gr.Slider(minimum=0.0, maximum=1, step=0.01, value=0.0, label="CFG rescale amount")
+                    # sampler_type_dropdown = gr.Dropdown(["euler", "heun", "dpmpp-2m-sde", "dpmpp-3m-sde", "k-heun", "k-lms", "k-dpmpp-2s-ancestral", "k-dpm-2", "k-dpm-fast"], label="Sampler type", value="heun")
+                    sampler_type_dropdown = gr.Dropdown(["euler", "heun"], label="Sampler type", value="euler")
+                    sigma_min_slider = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=0.0, label="Sigma min")
+                    sigma_max_slider = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=1.0, label="Sigma max")
+                    cfg_rescale_slider = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=0.0, label="CFG rescale amount")
 
             if inpainting: 
                 # Inpainting Tab
                 with gr.Accordion("Inpainting", open=False):
-                    sigma_max_slider.maximum=1000
+                    sigma_max_slider.maximum=1.0
                     
                     init_audio_checkbox = gr.Checkbox(label="Do inpainting")
                     init_audio_input = gr.Audio(label="Init audio")
-                    init_noise_level_slider = gr.Slider(minimum=0.1, maximum=100.0, step=0.1, value=80, label="Init audio noise level", visible=False) # hide this
+                    init_noise_level_slider = gr.Slider(minimum=0.1, maximum=1.0, step=0.01, value=0.75, label="Init audio noise level")
 
                     mask_cropfrom_slider = gr.Slider(minimum=0.0, maximum=100.0, step=0.1, value=0, label="Crop From %")
                     mask_pastefrom_slider = gr.Slider(minimum=0.0, maximum=100.0, step=0.1, value=0, label="Paste From %")
@@ -442,7 +457,7 @@ def create_sampling_ui(model_config, inpainting=False):
                     mask_maskend_slider = gr.Slider(minimum=0.0, maximum=100.0, step=0.1, value=100, label="Mask End %")
                     mask_softnessL_slider = gr.Slider(minimum=0.0, maximum=100.0, step=0.1, value=0, label="Softmask Left Crossfade Length %")
                     mask_softnessR_slider = gr.Slider(minimum=0.0, maximum=100.0, step=0.1, value=0, label="Softmask Right Crossfade Length %")
-                    mask_marination_slider = gr.Slider(minimum=0.0, maximum=1, step=0.0001, value=0, label="Marination level", visible=False) # still working on the usefulness of this 
+                    mask_marination_slider = gr.Slider(minimum=0.0, maximum=1, step=0.0001, value=0, label="Marination level") # still working on the usefulness of this 
 
                     inputs = [prompt, 
                         negative_prompt,
@@ -473,7 +488,7 @@ def create_sampling_ui(model_config, inpainting=False):
                 with gr.Accordion("Init audio", open=False):
                     init_audio_checkbox = gr.Checkbox(label="Use init audio")
                     init_audio_input = gr.Audio(label="Init audio")
-                    init_noise_level_slider = gr.Slider(minimum=0.1, maximum=100.0, step=0.01, value=0.1, label="Init noise level")
+                    init_noise_level_slider = gr.Slider(minimum=0.1, maximum=1.0, step=0.01, value=0.75, label="Init noise level")
 
                     inputs = [prompt, 
                         negative_prompt,
@@ -506,13 +521,105 @@ def create_sampling_ui(model_config, inpainting=False):
         ], 
         api_name="generate")
 
+    with gr.Row():
+        with gr.Column(scale=6):
+            gr.Examples(
+                    [
+                        [
+                            "A hip-hop track using sounds from a construction site—hammering nails as the beat, drilling sounds as scratches, and metal clanks as rhythm accents.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "A saxophone that sounds like meowing of cat.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "A techno song where all the electronic sounds are generated from kitchen noises—blender whirs, toaster pops, and the sizzle of cooking.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "Dogs barking, birds chirping, and electronic dance music.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "Dog barks a beautiful and fast-paced folk melody while several cats sing chords while meowing.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "A time-lapse of a city evolving over a thousand years, represented through shifting musical genres blending seamlessly from ancient to futuristic sounds.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "An underwater city where buildings hum melodies as currents pass through them, accompanied by the distant drumming of bioluminescent sea creatures.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "A factory machinery that screams in metallic agony.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "A lullaby sung by robotic voices, accompanied by the gentle hum of electric currents and the soft beeping of machines.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "A soundscape with a choir of alarm siren from an ambulance car but to produce a lush and calm choir composition with sustained chords.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "The sound of ocean waves where each crash is infused with a musical chord, and the calls of seagulls are transformed into flute melodies.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "Mechanical flowers blooming at dawn, each petal unfolding with a soft chime, orchestrated with the gentle ticking of gears.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "The sound of a meteor shower where each falling star emits a unique musical note, creating a celestial symphony in the night sky.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "A clock shop where the ticking and chiming of various timepieces synchronize into a complex polyrhythmic composition.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "An enchanted library where each book opened releases sounds of its story—adventure tales bring drum beats, romances evoke violin strains.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "A rainstorm where each raindrop hitting different surfaces produces unique musical pitches, forming an unpredictable symphony.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "A carnival where the laughter of children and carousel music intertwine, and the sound of games and rides blend into a festive overture.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "A futuristic rainforest where holographic animals emit digital soundscapes, and virtual raindrops produce glitchy electronic rhythms.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "An echo inside a cave where droplets of water create a cascading xylophone melody, and bats' echolocation forms ambient harmonies.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                        [
+                            "A steampunk cityscape where steam engines puff in rhythm, and metallic gears turning produce mechanical melodies.", 
+                            None, 0, 10, 3.5, 100, 0, -1, "euler", 0, 1, 0, False, None, None
+                        ],
+                    ],
+                    fn=generate_cond,
+                    inputs=inputs,
+                    outputs=[
+                        audio_output, 
+                        audio_spectrogram_output
+                    ]
+                )
 
 def create_txt2audio_ui(model_config):
     with gr.Blocks() as ui:
         with gr.Tab("Generation"):
             create_sampling_ui(model_config) 
-        with gr.Tab("Inpainting"):
-            create_sampling_ui(model_config, inpainting=True)    
+        # with gr.Tab("Inpainting"):
+        #     create_sampling_ui(model_config, inpainting=True)    
     return ui
 
 def create_diffusion_uncond_ui(model_config):
@@ -656,17 +763,9 @@ def create_lm_ui(model_config):
 
     return ui
 
-def create_ui(model_config_path=None, ckpt_path=None, pretrained_name=None, pretransform_ckpt_path=None, model_half=False):
-
-    assert (pretrained_name is not None) ^ (model_config_path is not None and ckpt_path is not None), "Must specify either pretrained name or provide a model config and checkpoint, but not both"
-
-    if model_config_path is not None:
-        # Load config from json file
-        with open(model_config_path) as f:
-            model_config = json.load(f)
-    else:
-        model_config = None
-
+def create_ui(ckpt_path=None, model_half=False):
+    global model  # access the global model variable
+    
     try:
         has_mps = platform.system() == "Darwin" and torch.backends.mps.is_available()
     except Exception:
@@ -681,8 +780,14 @@ def create_ui(model_config_path=None, ckpt_path=None, pretrained_name=None, pret
         device = torch.device("cpu")
 
     print("Using device:", device)
-
-    _, model_config = load_model(model_config, ckpt_path, pretrained_name=pretrained_name, pretransform_ckpt_path=pretransform_ckpt_path, model_half=model_half, device=device)
+    print(f"Loading model from {ckpt_path}")
+    model, model_config = get_local_pretrained_model(ckpt_path)
+    
+    model = model.to(device).eval().requires_grad_(False)
+    
+    if model_half:
+        print("Converting model to half precision")
+        model = model.half()
     
     model_type = model_config["model_type"]
 

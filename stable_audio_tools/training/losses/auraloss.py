@@ -1,3 +1,4 @@
+# modified from stable-audio-tools under the MIT license
 # Copied and modified from https://github.com/csteinmetz1/auraloss/blob/main/auraloss/freq.py under Apache License 2.0
 # You can find the license at LICENSES/LICENSE_AURALOSS.txt
 

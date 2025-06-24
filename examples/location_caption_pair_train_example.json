@@ -1,0 +1,4 @@
+{"dataset": "name_of_train_dataset", "location": "/path/to/audio_1.wav", "start": 0.0, "end": 10.0, "captions": "caption for audio_1.wav, 0 to 10 seconds"}
+{"dataset": "name_of_train_dataset", "location": "/path/to/audio_1.wav", "start": 10.0, "end": 20.0, "captions": "caption for audio_1.wav, 10 to 20 seconds"}
+{"dataset": "name_of_train_dataset", "location": "/path/to/audio_2.wav", "start": 0.0, "end": 10.0, "captions": "caption for audio_2.wav, 0 to 10 seconds"}
+{"dataset": "name_of_train_dataset", "location": "/path/to/audio_2.wav", "start": 10.0, "end": 20.0, "captions": "caption for audio_2.wav, 10 to 20 seconds"}

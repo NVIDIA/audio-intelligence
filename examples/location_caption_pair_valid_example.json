@@ -1,0 +1,2 @@
+{"dataset": "name_of_valid_dataset", "location": "/path/to/audio_3.wav", "start": 0.0, "end": 10.0, "captions": "caption for audio_3.wav, 0 to 10 seconds"}
+{"dataset": "name_of_valid_dataset", "location": "/path/to/audio_4.wav", "start": 0.0, "end": 10.0, "captions": "caption for audio_4.wav, 0 to 10 seconds"}

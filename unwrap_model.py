@@ -1,8 +1,13 @@
+# modified from stable-audio-tools under the MIT license
+
 import argparse
 import json
 import torch
 from torch.nn.parameter import Parameter
 from stable_audio_tools.models import create_model_from_config
+from stable_audio_tools.models.utils import remove_weight_norm_from_model
+from stable_audio_tools.utils.addict import Dict as AttrDict
+from pprint import pprint
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
@@ -15,8 +20,21 @@ if __name__ == '__main__':
 
     with open(args.model_config) as f:
         model_config = json.load(f)
+        
+    # convert it to AttrDict (dot-accessible dictionary)
+    model_config = AttrDict(model_config)
+    
+    # to load config.json from experiment with potential overridden params
+    if "model_config" in model_config.keys():
+        model_config = model_config["model_config"]
+    pprint(model_config)
     
     model = create_model_from_config(model_config)
+    
+    # Remove weight_norm from the pretransform if specified (during training), to load WN-less weight properly from ckpt
+    # either "pre_load" or "post_load" will work
+    if model_config.get("remove_pretransform_weight_norm", ''):
+        remove_weight_norm_from_model(model.pretransform)
     
     model_type = model_config.get('model_type', None)
 
@@ -32,7 +50,7 @@ if __name__ == '__main__':
         if training_config.get("use_ema", False):
             from stable_audio_tools.models.factory import create_model_from_config
             ema_copy = create_model_from_config(model_config)
-            ema_copy = create_model_from_config(model_config) # I don't know why this needs to be called twice but it broke when I called it once
+            # ema_copy = create_model_from_config(model_config) # I don't know why this needs to be called twice but it broke when I called it once
         
             # Copy each weight to the ema copy
             for name, param in model.state_dict().items():
@@ -47,6 +65,7 @@ if __name__ == '__main__':
             args.ckpt_path, 
             autoencoder=model, 
             strict=False,
+            sample_rate=model.sample_rate,
             loss_config=training_config["loss_configs"],
             use_ema=training_config["use_ema"],
             ema_copy=ema_copy if use_ema else None

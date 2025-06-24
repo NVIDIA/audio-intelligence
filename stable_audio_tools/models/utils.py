@@ -1,7 +1,10 @@
+# modified from stable-audio-tools under the MIT license
+
 import torch
 from safetensors.torch import load_file
 
 from torch.nn.utils import remove_weight_norm
+from torch.nn.utils.parametrize import remove_parametrizations
 
 def load_ckpt_state_dict(ckpt_path):
     if ckpt_path.endswith(".safetensors"):
@@ -12,10 +15,20 @@ def load_ckpt_state_dict(ckpt_path):
     return state_dict
 
 def remove_weight_norm_from_model(model):
+    print(f"INFO: Removing all weight norm from model")
     for module in model.modules():
-        if hasattr(module, "weight"):
-            print(f"Removing weight norm from {module}")
-            remove_weight_norm(module)
+        if hasattr(module, "parametrizations"):  # for new WN implementation using parameterizations
+            # print(f"Removing weight norm (parameterizations) from {module}")
+            try:
+                remove_parametrizations(module, "weight")
+            except ValueError:
+                print(f"[WARNING] No weight norm found in {module} with parameterizations. You can ignore this if you know that this module does not apply weight norm.")
+        elif hasattr(module, "weight"):
+            # print(f"Removing weight norm (legacy) from {module}")
+            try:
+                remove_weight_norm(module)
+            except ValueError:
+                print(f"[WARNING] No weight norm found in {module} with legacy method. You can ignore this if you know that this module does not apply weight norm.")
 
     return model
 

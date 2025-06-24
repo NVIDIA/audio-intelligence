@@ -3,34 +3,46 @@
     "sample_size": 65536,
     "sample_rate": 44100,
     "audio_channels": 2,
+    "precision": "32-true",
     "model": {
         "encoder": {
-            "type": "dac",
+            "type": "oobleck",
             "config": {
                 "in_channels": 2,
+                "channels": 128,
+                "c_mults": [1, 2, 4, 8, 16],
+                "strides": [2, 4, 4, 8, 8],
                 "latent_dim": 128,
-                "d_model": 128,
-                "strides": [4, 4, 8, 8]
+                "use_snake": true,
+                "causal": false,
+                "padding_mode": "zeros"
             }
         },
         "decoder": {
-            "type": "dac",
+            "type": "oobleck",
             "config": {
                 "out_channels": 2,
+                "channels": 128,
+                "c_mults": [1, 2, 4, 8, 16],
+                "strides": [2, 4, 4, 8, 8],
                 "latent_dim": 64,
-                "channels": 1536,
-                "rates": [8, 8, 4, 4]
+                "use_snake": true,
+                "final_tanh": false,
+                "causal": false,
+                "padding_mode": "zeros"
             }
         },
         "bottleneck": {
             "type": "vae"
         },
         "latent_dim": 64,
-        "downsampling_ratio": 1024,
+        "downsampling_ratio": 2048,
         "io_channels": 2
     },
     "training": {
-        "learning_rate": 1e-4,
+        "max_steps": 2800000,
+        "learning_rate": 1.5e-4,
+        "gradient_clip_val": 500,
         "warmup_steps": 0,
         "use_ema": true,
         "optimizer_configs": {
@@ -39,13 +51,16 @@
                     "type": "AdamW",
                     "config": {
                         "betas": [0.8, 0.99],
-                        "lr": 1e-4
+                        "lr": 1.5e-4,
+                        "weight_decay": 1e-3
                     }
                 },
                 "scheduler": {
-                    "type": "ExponentialLR",
+                    "type": "InverseLR",
                     "config": {
-                        "gamma": 0.999996
+                        "inv_gamma": 200000,
+                        "power": 0.5,
+                        "warmup": 0.999
                     }
                 }
             },
@@ -54,13 +69,16 @@
                     "type": "AdamW",
                     "config": {
                         "betas": [0.8, 0.99],
-                        "lr": 1e-4
+                        "lr": 3.0e-4,
+                        "weight_decay": 1e-3
                     }
                 },
                 "scheduler": {
-                    "type": "ExponentialLR",
+                    "type": "InverseLR",
                     "config": {
-                        "gamma": 0.999996
+                        "inv_gamma": 200000,
+                        "power": 0.5,
+                        "warmup": 0.999
                     }
                 }
             }
@@ -69,7 +87,7 @@
             "discriminator": {
                 "type": "encodec",
                 "config": {
-                    "filters": 32,
+                    "filters": 64,
                     "n_ffts": [2048, 1024, 512, 256, 128],
                     "hop_lengths": [512, 256, 128, 64, 32],
                     "win_lengths": [2048, 1024, 512, 256, 128]
@@ -100,12 +118,12 @@
             "bottleneck": {
                 "type": "kl",
                 "weights": {
-                    "kl": 1e-6
+                    "kl": 1e-4
                 }
             }
         },
         "demo": {
-            "demo_every": 2000
+            "demo_every": 10000
         }
     }
 }

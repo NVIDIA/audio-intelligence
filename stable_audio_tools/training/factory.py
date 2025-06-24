@@ -1,3 +1,5 @@
+# modified from stable-audio-tools under the MIT license
+
 import torch
 from torch.nn import Parameter
 from ..models.factory import create_model_from_config
@@ -42,7 +44,9 @@ def create_training_wrapper_from_config(model_config, model):
         return AutoencoderTrainingWrapper(
             model, 
             lr=training_config["learning_rate"],
+            gradient_clip_val=training_config.get("gradient_clip_val", 2000),
             warmup_steps=training_config.get("warmup_steps", 0), 
+            encoder_freeze=training_config.get("encoder_freeze", False),
             encoder_freeze_on_warmup=training_config.get("encoder_freeze_on_warmup", False),
             sample_rate=model_config["sample_rate"],
             loss_config=training_config.get("loss_configs", None),
@@ -72,7 +76,7 @@ def create_training_wrapper_from_config(model_config, model):
             optimizer_configs=training_config.get("optimizer_configs", None),
             pre_encoded=training_config.get("pre_encoded", False),
             cfg_dropout_prob = training_config.get("cfg_dropout_prob", 0.1),
-            timestep_sampler = training_config.get("timestep_sampler", "uniform")
+            timestep_sampler = training_config.get("timestep_sampler", "uniform"),
         )
     elif model_type == 'diffusion_prior':
         from .diffusion import DiffusionPriorTrainingWrapper
@@ -107,7 +111,12 @@ def create_training_wrapper_from_config(model_config, model):
         return DiffusionCondInpaintTrainingWrapper(
             model, 
             lr=training_config.get("learning_rate", None),
-            max_mask_segments = training_config.get("max_mask_segments", 10),
+            mask_type = training_config.get("mask_type", "random_mask"),
+            max_random_mask_segments = training_config.get("max_random_mask_segments", 10),
+            speechflow_p_cond = training_config.get("speechflow_p_cond", 0.9),
+            speechflow_span_rate_min = training_config.get("speechflow_span_rate_min", 0.7),
+            speechflow_span_rate_max = training_config.get("speechflow_span_rate_max", 1.0) ,
+            speechflow_min_span_length = training_config.get("speechflow_min_span_length", 10),
             log_loss_info=training_config.get("log_loss_info", False),
             optimizer_configs=training_config.get("optimizer_configs", None),
             use_ema=training_config.get("use_ema", True),

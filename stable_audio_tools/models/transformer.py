@@ -6,7 +6,7 @@ from einops.layers.torch import Rearrange
 import torch
 import torch.nn.functional as F
 from torch import nn, einsum
-from torch.cuda.amp import autocast
+from torch.amp import autocast
 from typing import Callable, Literal
 
 try:
@@ -123,7 +123,7 @@ class RotaryEmbedding(nn.Module):
         t = torch.arange(seq_len, device = device)
         return self.forward(t)
 
-    @autocast(enabled = False)
+    @autocast('cuda', enabled = False)
     def forward(self, t):
         device = self.inv_freq.device
 
@@ -148,7 +148,7 @@ def rotate_half(x):
     x1, x2 = x.unbind(dim = -2)
     return torch.cat((-x2, x1), dim = -1)
 
-@autocast(enabled = False)
+@autocast('cuda', enabled = False)
 def apply_rotary_pos_emb(t, freqs, scale = 1):
     out_dtype = t.dtype
 

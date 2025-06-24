@@ -1,8 +1,9 @@
 {
     "model_type": "diffusion_cond",
-    "sample_size": 12582912,
+    "sample_size": 441000,
     "sample_rate": 44100,
     "audio_channels": 2,
+    "precision": "bf16-mixed",
     "model": {
         "pretransform": {
             "type": "autoencoder",
@@ -43,13 +44,10 @@
             "configs": [
                 {
                     "id": "prompt",
-                    "type": "clap_text",
+                    "type": "t5",
                     "config": {
-                        "audio_model_type": "HTSAT-base",
-                        "enable_fusion": true,
-                        "clap_ckpt_path": "/path/to/clap.ckpt",
-                        "use_text_features": true,
-                        "feature_layer_ix": -2
+                        "t5_model_name": "t5-base",
+                        "max_length": 512
                     }
                 },
                 {
@@ -75,6 +73,7 @@
             "cross_attention_cond_ids": ["prompt", "seconds_start", "seconds_total"],
             "global_cond_ids": ["seconds_start", "seconds_total"],
             "type": "dit",
+            "diffusion_objective": "rectified_flow",
             "config": {
                 "io_channels": 64,
                 "embed_dim": 1536,
@@ -83,12 +82,28 @@
                 "cond_token_dim": 768,
                 "global_cond_dim": 1536,
                 "project_cond_tokens": false,
-                "transformer_type": "continuous_transformer"
+                "transformer_type": "etta_transformer",
+                "global_cond_type": "adaLN",
+                "is_causal": false,
+                "pos_emb_name": "rope",
+                "rope_base": 16384,
+                "use_flash_attention": true,
+                "deterministic": false,
+                "p_dropout": 0.1,
+                "apply_norm_to_cond": true,
+                "kernel_size": 1,
+                "context_xattn": {
+                    "n_heads": 16,
+                    "d_heads": 768,
+                    "pos_emb_name": ""
+                }
             }
         },
         "io_channels": 64
     },
     "training": {
+        "max_steps": 1000000,
+        "timestep_sampler": "logit_normal",
         "use_ema": true,
         "log_loss_info": false,
         "optimizer_configs": {
@@ -96,7 +111,7 @@
                 "optimizer": {
                     "type": "AdamW",
                     "config": {
-                        "lr": 5e-5,
+                        "lr": 1e-4,
                         "betas": [0.9, 0.999],
                         "weight_decay": 1e-3
                     }
@@ -112,16 +127,16 @@
             }
         },
         "demo": {
-            "demo_every": 2000,
-            "demo_steps": 250,
+            "demo_every": 10000,
+            "demo_steps": 100,
             "num_demos": 4,
             "demo_cond": [
-                {"prompt": "A beautiful piano arpeggio", "seconds_start": 0, "seconds_total": 80},
-                {"prompt": "A tropical house track with upbeat melodies, a driving bassline, and cheery vibes", "seconds_start": 0, "seconds_total": 250},
-                {"prompt": "A cool 80s glam rock song with driving drums and distorted guitars", "seconds_start": 0, "seconds_total": 180},
-                {"prompt": "A grand orchestral arrangement with thunderous percussion, epic brass fanfares, and soaring strings, creating a cinematic atmosphere fit for a heroic battle.", "seconds_start": 0, "seconds_total": 190}
+                {"prompt": "A hip-hop track using sounds from a construction site—hammering nails as the beat, drilling sounds as scratches, and metal clanks as rhythm accents.", "seconds_start": 0, "seconds_total": 10},
+                {"prompt": "A saxophone that sounds like meowing of cat.", "seconds_start": 0, "seconds_total": 10},
+                {"prompt": "Dogs barking, birds chirping, and electronic dance music.", "seconds_start": 0, "seconds_total": 10},
+                {"prompt": "A soundscape with a choir of alarm siren from an ambulance car but to produce a lush and calm choir composition with sustained chords.", "seconds_start": 0, "seconds_total": 10}
             ],
-            "demo_cfg_scales": [3, 6, 9]
+            "demo_cfg_scales": [1, 3.5, 6]
         }
     }
 }

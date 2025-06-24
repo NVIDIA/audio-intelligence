@@ -1,3 +1,4 @@
+# modified from stable-audio-tools under the MIT license
 #Heavily influenced by https://github.com/facebookresearch/audiocraft/blob/main/audiocraft/modules/conditioners.py
 
 import torch
@@ -228,7 +229,7 @@ class CLAPAudioConditioner(Conditioner):
         # Convert to mono
         mono_audios = audios.mean(dim=1)
 
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast('cuda', enabled=False):
             audio_embedding = self.model.get_audio_embedding_from_data(mono_audios.float(), use_tensor=True)
 
         audio_embedding = audio_embedding.unsqueeze(1).to(device)
@@ -311,7 +312,7 @@ class T5Conditioner(Conditioner):
 
         self.model.eval()
             
-        with torch.cuda.amp.autocast(dtype=torch.float16) and torch.set_grad_enabled(self.enable_grad):
+        with torch.amp.autocast('cuda', dtype=torch.float16) and torch.set_grad_enabled(self.enable_grad):
             embeddings = self.model(
                 input_ids=input_ids, attention_mask=attention_mask
             )["last_hidden_state"]    
