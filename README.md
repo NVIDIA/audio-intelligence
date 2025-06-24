@@ -11,7 +11,7 @@ This repository contains model, training, and inference code implementation of [
 
 * Synthetic audio caption generation pipeline is built on top of [Audio Flamingo](https://github.com/NVIDIA/audio-flamingo) from NVIDIA.
 
-* Text-to-audio model is built on top of [`stable-autdio-tools`](https://github.com/Stability-AI/stable-audio-tools) from Stability AI.
+* Text-to-audio model is built on top of [`stable-audio-tools`](https://github.com/Stability-AI/stable-audio-tools) from Stability AI.
 
 ## Installation
 
