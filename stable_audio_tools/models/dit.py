@@ -129,7 +129,7 @@ class DiffusionTransformer(nn.Module):
 
         elif self.transformer_type == "etta_transformer":
             assert self.global_cond_type == "adaLN",\
-                f"NVTransformer only supports global_cond_type='adaLN'!"
+                f"ETTATransformer only supports global_cond_type='adaLN'!"
             # The global conditioning is projected to the embed_dim already at this point
             global_dim = embed_dim
                 
