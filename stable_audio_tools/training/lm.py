@@ -6,7 +6,7 @@ import torchaudio
 import typing as tp
 import wandb
 
-from aeiou.viz import pca_point_cloud, audio_spectrogram_image, tokens_spectrogram_image
+from stable_audio_tools.interface.aeiou import pca_point_cloud, audio_spectrogram_image, tokens_spectrogram_image
 from ema_pytorch import EMA
 from einops import rearrange
 from safetensors.torch import save_file
@@ -155,7 +155,8 @@ class AudioLanguageModelTrainingWrapper(pl.LightningModule):
             'train/loss': loss.detach(),
             'train/cross_entropy': cross_entropy.detach(),
             'train/perplexity': torch.exp(cross_entropy).detach(),
-            'train/lr': self.trainer.optimizers[0].param_groups[0]['lr']
+            'train/lr': self.trainer.optimizers[0].param_groups[0]['lr'],
+            'global_step': float(self.global_step)
         }
 
         for k, ce_q in enumerate(cross_entropy_per_codebook):

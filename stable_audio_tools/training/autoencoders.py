@@ -1,6 +1,6 @@
+# modified from stable-audio-tools under the MIT license
+
 import torch
-import torchaudio
-import wandb
 from einops import rearrange
 from safetensors.torch import save_file, save_model
 from ema_pytorch import EMA
@@ -14,14 +14,24 @@ from .utils import create_optimizer_from_config, create_scheduler_from_config
 
 
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
-from aeiou.viz import pca_point_cloud, audio_spectrogram_image, tokens_spectrogram_image
+from stable_audio_tools.interface.aeiou import audio_spectrogram_image, tokens_spectrogram_image
+
+import torchvision
+from PIL import Image
+
+@rank_zero_only
+def print_model(model):
+    print(model)
+
 
 class AutoencoderTrainingWrapper(pl.LightningModule):
     def __init__(
             self, 
             autoencoder: AudioAutoencoder,
             lr: float = 1e-4,
+            gradient_clip_val: float = 2000.,
             warmup_steps: int = 0,
+            encoder_freeze: bool = False,
             encoder_freeze_on_warmup: bool = False,
             sample_rate=48000,
             loss_config: dict = None,
@@ -37,96 +47,49 @@ class AutoencoderTrainingWrapper(pl.LightningModule):
         self.automatic_optimization = False
 
         self.autoencoder = autoencoder
+        print_model(self.autoencoder)
 
         self.warmed_up = False
         self.warmup_steps = warmup_steps
         self.encoder_freeze_on_warmup = encoder_freeze_on_warmup
         self.lr = lr
+        self.gradient_clip_val = gradient_clip_val
 
         self.force_input_mono = force_input_mono
 
         self.teacher_model = teacher_model
+        
+        # New: freeze encoder entirely if set. This is useful for decoder-only finetuning
+        self.encoder_freeze = encoder_freeze
+        if self.encoder_freeze:
+            print("[WARNING(AutoencoderTrainingWrapper)] 'encoder_freeze' is set. The encoder will NOT receive gradients and will stay frozen.")
+            for p in self.autoencoder.encoder.parameters():
+                p.requires_grad = False
 
         if optimizer_configs is None:
-            optimizer_configs ={
-                "autoencoder": {
-                    "optimizer": {
-                        "type": "AdamW",
-                        "config": {
-                            "lr": lr,
-                            "betas": (.8, .99)
-                        }
-                    }
-                },
-                "discriminator": {
-                    "optimizer": {
-                        "type": "AdamW",
-                        "config": {
-                            "lr": lr,
-                            "betas": (.8, .99)
-                        }
-                    }
-                }
-
-            } 
+            raise ValueError("optimizer_configs not provided")
             
         self.optimizer_configs = optimizer_configs
 
         if loss_config is None:
-            scales = [2048, 1024, 512, 256, 128, 64, 32]
-            hop_sizes = []
-            win_lengths = []
-            overlap = 0.75
-            for s in scales:
-                hop_sizes.append(int(s * (1 - overlap)))
-                win_lengths.append(s)
-        
-            loss_config = {
-                "discriminator": {
-                    "type": "encodec",
-                    "config": {
-                        "n_ffts": scales,
-                        "hop_lengths": hop_sizes,
-                        "win_lengths": win_lengths,
-                        "filters": 32
-                    },
-                    "weights": {
-                        "adversarial": 0.1,
-                        "feature_matching": 5.0,
-                    }
-                },
-                "spectral": {
-                    "type": "mrstft",
-                    "config": {
-                        "fft_sizes": scales,
-                        "hop_sizes": hop_sizes,
-                        "win_lengths": win_lengths,
-                        "perceptual_weighting": True
-                    },
-                    "weights": {
-                        "mrstft": 1.0,
-                    }
-                },
-                "time": {
-                    "type": "l1",
-                    "config": {},
-                    "weights": {
-                        "l1": 0.0,
-                    }
-                }
-            }
+            raise ValueError("loss_config not provided")
         
         self.loss_config = loss_config
        
         # Spectral reconstruction loss
-
-        stft_loss_args = loss_config['spectral']['config']
+        stft_loss_type = loss_config['spectral']['type']
+        if stft_loss_type == "mrstft": # original EnCodec MRSTFT used by stable audio VAE
+            msstft_class = MultiResolutionSTFTLoss
+            msstft_loss_args = loss_config['spectral']['config'] # both uses same args from config
+            sdstft_loss_args = loss_config['spectral']['config'] # both uses same args from config
+        else:
+            raise NotImplementedError(f"unknown spectral loss type {stft_loss_type}")
 
         if self.autoencoder.out_channels == 2:
-            self.sdstft = SumAndDifferenceSTFTLoss(sample_rate=sample_rate, **stft_loss_args)
-            self.lrstft = MultiResolutionSTFTLoss(sample_rate=sample_rate, **stft_loss_args)
+            self.sdstft = SumAndDifferenceSTFTLoss(sample_rate=sample_rate, **sdstft_loss_args)
+            self.lrstft = msstft_class(sample_rate=sample_rate, **msstft_loss_args)
         else:
-            self.sdstft = MultiResolutionSTFTLoss(sample_rate=sample_rate, **stft_loss_args)
+            self.sdstft = msstft_class(sample_rate=sample_rate, **msstft_loss_args)
 
         # Discriminator
 
@@ -136,7 +99,11 @@ class AutoencoderTrainingWrapper(pl.LightningModule):
             self.discriminator = EncodecDiscriminator(in_channels=self.autoencoder.out_channels, **loss_config['discriminator']['config'])
         elif loss_config['discriminator']['type'] == 'dac':
             self.discriminator = DACGANLoss(channels=self.autoencoder.out_channels, sample_rate=sample_rate, **loss_config['discriminator']['config'])
-
+        else:
+            raise NotImplementedError(f"Unknown discriminator type {loss_config['discriminator']['type']}")
+        
+        print_model(self.discriminator)
+        
         self.gen_loss_modules = []
 
         # Adversarial and feature matching losses
@@ -170,7 +137,8 @@ class AutoencoderTrainingWrapper(pl.LightningModule):
                     AuralossLoss(self.lrstft, 'reals_left', 'decoded_left', name='stft_loss_left', weight=self.loss_config['spectral']['weights']['mrstft']/2),
                     AuralossLoss(self.lrstft, 'reals_right', 'decoded_right', name='stft_loss_right', weight=self.loss_config['spectral']['weights']['mrstft']/2),
                 ]
-
+                
+            # original stable-audio-tools adds same mrstft_loss twice for unknown reason, keep as-is for consistency
             self.gen_loss_modules += [
                 AuralossLoss(self.sdstft, 'reals', 'decoded', name='mrstft_loss', weight=self.loss_config['spectral']['weights']['mrstft']),
             ]
@@ -182,6 +150,18 @@ class AutoencoderTrainingWrapper(pl.LightningModule):
             self.gen_loss_modules += create_loss_modules_from_bottleneck(self.autoencoder.bottleneck, self.loss_config)
 
         self.losses_gen = MultiLoss(self.gen_loss_modules)
+        
+        # new: decays recon losses (sdstft and lrstft) to zero after specified steps using recon_loss_decays_to_zero_after in loss_config
+        # NOTE: recon losses are wrapped with AuralossLoss class.
+        # so our stragety is multipling the decay factor in AuralossLoss, accessible via self.losses_gen.losses[i].weight
+        # where i corresponds to the AuralossLoss class.
+        self.recon_loss_decay_mode = self.loss_config.get("recon_loss_decay_mode", "linear")
+        self.recon_loss_decays_to_zero_after = self.loss_config.get("recon_loss_decays_to_zero_after", None)
+        if self.recon_loss_decays_to_zero_after is not None:
+            print(f"[WARNING(AutoencoderTrainingWrapper)] recon_loss_decays_to_zero_after set to {self.recon_loss_decays_to_zero_after} with {self.recon_loss_decay_mode} decay schedule")
+            self.recon_loss_decay_factor = 1.0
+        else:
+            self.recon_loss_decay_factor = None
 
         self.disc_loss_modules = [
             ValueLoss(key='loss_dis', weight=1.0, name='discriminator_loss'),
@@ -205,11 +185,40 @@ class AutoencoderTrainingWrapper(pl.LightningModule):
             )
 
         self.latent_mask_ratio = latent_mask_ratio
+    
+    def update_recon_loss_decay_factor(self, current_step):
+        """Update the decay factor for reconstruction losses based on the current step using exponential decay."""
+        dynamic_weights = {}
+        if self.recon_loss_decays_to_zero_after is not None:
+            if self.recon_loss_decay_mode == "linear":
+                loss_weight = 1 - (current_step / self.recon_loss_decays_to_zero_after)
+                loss_weight = max(loss_weight,0)
+            elif self.recon_loss_decay_mode == "exponential":
+                decay_rate = 4.6 / self.recon_loss_decays_to_zero_after
+                loss_weight = torch.exp(-decay_rate * current_step).item()
+                loss_weight = max(loss_weight, 0)
+            else:
+                raise ValueError(f"Unknown decay mode: {self.recon_loss_decay_mode}")
+            
+            # decay all reconstruction losses
+            dynamic_weights["mrstft_loss"] = loss_weight
+            dynamic_weights["stft_loss_left"] = loss_weight
+            dynamic_weights["stft_loss_right"] = loss_weight
+            dynamic_weights["l1_time_loss"] = loss_weight
+            
+        return dynamic_weights
+
 
     def configure_optimizers(self):
-
-        opt_gen = create_optimizer_from_config(self.optimizer_configs['autoencoder']['optimizer'], self.autoencoder.parameters())
-        opt_disc = create_optimizer_from_config(self.optimizer_configs['discriminator']['optimizer'], self.discriminator.parameters())
+        
+        opt_gen = create_optimizer_from_config(
+            self.optimizer_configs['autoencoder']['optimizer'],
+            self.autoencoder.parameters()
+        )
+        opt_disc = create_optimizer_from_config(
+            self.optimizer_configs['discriminator']['optimizer'],
+            self.discriminator.parameters()
+        )
 
         if "scheduler" in self.optimizer_configs['autoencoder'] and "scheduler" in self.optimizer_configs['discriminator']:
             sched_gen = create_scheduler_from_config(self.optimizer_configs['autoencoder']['scheduler'], opt_gen)
@@ -241,7 +250,7 @@ class AutoencoderTrainingWrapper(pl.LightningModule):
 
         data_std = encoder_input.std()
 
-        if self.warmed_up and self.encoder_freeze_on_warmup:
+        if (self.warmed_up and self.encoder_freeze_on_warmup) or self.encoder_freeze:
             with torch.no_grad():
                 latents, encoder_info = self.autoencoder.encode(encoder_input, return_info=True)
         else:
@@ -283,7 +292,6 @@ class AutoencoderTrainingWrapper(pl.LightningModule):
                 loss_info['own_latents_teacher_decoded'] = own_latents_teacher_decoded
                 loss_info['teacher_latents_own_decoded'] = teacher_latents_own_decoded
 
-       
         if self.warmed_up:
             loss_dis, loss_adv, feature_matching_distance = self.discriminator.loss(reals, decoded)
         else:
@@ -309,28 +317,33 @@ class AutoencoderTrainingWrapper(pl.LightningModule):
         if self.global_step % 2 and self.warmed_up:
             loss, losses = self.losses_disc(loss_info)
 
-            log_dict = {
-                'train/disc_lr': opt_disc.param_groups[0]['lr']
-            }
-
             opt_disc.zero_grad()
             self.manual_backward(loss)
+            grad_norm_disc = torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(), self.gradient_clip_val)
             opt_disc.step()
 
             if sched_disc is not None:
                 # sched step every step
                 sched_disc.step()
+            
+            log_dict = {
+                'train/disc_lr': opt_disc.param_groups[0]['lr'],
+                'train/grad_norm_disc': grad_norm_disc,
+                'global_step': float(self.global_step)
+            }
 
         # Train the generator 
         else:
-
-            loss, losses = self.losses_gen(loss_info)
-
+            # recon loss decay implementation
+            dynamic_weights = self.update_recon_loss_decay_factor(self.global_step)
+            loss, losses = self.losses_gen(loss_info, dynamic_weights)
+            
             if self.use_ema:
                 self.autoencoder_ema.update()
 
             opt_gen.zero_grad()
             self.manual_backward(loss)
+            grad_norm_gen = torch.nn.utils.clip_grad_norm_(self.autoencoder.parameters(), self.gradient_clip_val)
             opt_gen.step()
 
             if sched_gen is not None:
@@ -341,14 +354,24 @@ class AutoencoderTrainingWrapper(pl.LightningModule):
                 'train/loss': loss.detach(),
                 'train/latent_std': latents.std().detach(),
                 'train/data_std': data_std.detach(),
-                'train/gen_lr': opt_gen.param_groups[0]['lr']
+                'train/gen_lr': opt_gen.param_groups[0]['lr'],
+                'train/grad_norm_gen': grad_norm_gen,
+                'global_step': float(self.global_step)
             }
 
         for loss_name, loss_value in losses.items():
             log_dict[f'train/{loss_name}'] = loss_value.detach()
 
         self.log_dict(log_dict, prog_bar=True, on_step=True)
-
+        
+        # track histrogram of quantizer_indices to see codebook utils for VQ models
+        if hasattr(self.autoencoder.bottleneck, "tokens_id") and self.autoencoder.bottleneck.tokens_id in encoder_info.keys():
+            self.logger.experiment.add_histogram(
+                tag='train/tokens_id',
+                values=encoder_info[self.autoencoder.bottleneck.tokens_id],
+                global_step = self.global_step
+            )
+            
         return loss
     
     def export_model(self, path, use_safetensors=False):
@@ -377,6 +400,27 @@ class AutoencoderDemoCallback(pl.Callback):
         self.demo_dl = iter(demo_dl)
         self.sample_rate = sample_rate
         self.last_demo_step = -1
+    
+    # Assuming reals_fakes is a tensor already in the shape [batch_size, num_channels, height, width]
+    # and latents are the latent variables from your model
+    def log_to_tensorboard(self, writer, reals_fakes, latents, trainer, step):
+        # log audio, downmix stereo to mono
+        reals_fakes_float = reals_fakes.float() / 32767.
+        if reals_fakes_float.shape[0] == 2:
+            reals_fakes_float = torch.mean(reals_fakes_float, dim=0)
+        writer.add_audio('recon', reals_fakes_float, step, sample_rate=self.sample_rate)
+
+        # Spectrogram from tokens or similar - ensure it returns a PIL Image or a tensor
+        spec_img = tokens_spectrogram_image(latents)
+        if isinstance(spec_img, Image.Image):
+            spec_img = torchvision.transforms.ToTensor()(spec_img)
+        writer.add_image('embeddings_spec', spec_img, step)
+
+        # Audio spectrogram image logging
+        melspec_img = audio_spectrogram_image(reals_fakes)  # Make sure it returns a PIL Image or a tensor
+        if isinstance(melspec_img, Image.Image):
+            melspec_img = torchvision.transforms.ToTensor()(melspec_img)
+        writer.add_image('recon_melspec_left', melspec_img, step)
 
     @rank_zero_only
     @torch.no_grad()
@@ -420,28 +464,16 @@ class AutoencoderDemoCallback(pl.Callback):
 
             # Put the demos together
             reals_fakes = rearrange(reals_fakes, 'b d n -> d (b n)')
-
-            log_dict = {}
             
-            filename = f'recon_{trainer.global_step:08}.wav'
             reals_fakes = reals_fakes.to(torch.float32).clamp(-1, 1).mul(32767).to(torch.int16).cpu()
-            torchaudio.save(filename, reals_fakes, self.sample_rate)
-
-            log_dict[f'recon'] = wandb.Audio(filename,
-                                                sample_rate=self.sample_rate,
-                                                caption=f'Reconstructed')
+            self.log_to_tensorboard(trainer.logger.experiment, reals_fakes, latents, trainer, trainer.global_step)
             
-            log_dict[f'embeddings_3dpca'] = pca_point_cloud(latents)
-            log_dict[f'embeddings_spec'] = wandb.Image(tokens_spectrogram_image(latents))
-
-            log_dict[f'recon_melspec_left'] = wandb.Image(audio_spectrogram_image(reals_fakes))
-
-            trainer.logger.experiment.log(log_dict)
         except Exception as e:
             print(f'{type(e).__name__}: {e}')
             raise e
         finally:
             module.train()
+        
 
 def create_loss_modules_from_bottleneck(bottleneck, loss_config):
     losses = []
@@ -456,12 +488,22 @@ def create_loss_modules_from_bottleneck(bottleneck, loss_config):
         losses.append(kl_loss)
 
     if isinstance(bottleneck, RVQBottleneck) or isinstance(bottleneck, RVQVAEBottleneck):
-        quantizer_loss = ValueLoss(key='quantizer_loss', weight=1.0, name='quantizer_loss')
+        try:
+            rvq_weight = loss_config['bottleneck']['weights']['rvq']
+        except:
+            rvq_weight = 1.0
+        quantizer_loss = ValueLoss(key='quantizer_loss', weight=rvq_weight, name='quantizer_loss') # commitment loss is already added in here
         losses.append(quantizer_loss)
 
     if isinstance(bottleneck, DACRVQBottleneck) or isinstance(bottleneck, DACRVQVAEBottleneck):
-        codebook_loss = ValueLoss(key='vq/codebook_loss', weight=1.0, name='codebook_loss')
-        commitment_loss = ValueLoss(key='vq/commitment_loss', weight=0.25, name='commitment_loss')
+        try:
+            rvq_weight = loss_config['bottleneck']['weights']['rvq']
+        except:
+            rvq_weight = 1.0
+        commitment_weight = rvq_weight * 0.25
+        
+        codebook_loss = ValueLoss(key='vq/codebook_loss', weight=rvq_weight, name='codebook_loss')
+        commitment_loss = ValueLoss(key='vq/commitment_loss', weight=commitment_weight, name='commitment_loss')
         losses.append(codebook_loss)
         losses.append(commitment_loss)
 

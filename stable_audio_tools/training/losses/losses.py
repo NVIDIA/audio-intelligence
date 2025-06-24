@@ -1,3 +1,5 @@
+# modified from stable-audio-tools under the MIT license
+
 import typing as tp
 
 from torch.nn import functional as F
@@ -68,6 +70,7 @@ class MSELoss(LossModule):
 
         return self.weight * mse_loss
     
+    
 class AuralossLoss(LossModule):
     def __init__(self, auraloss_module, input_key: str, target_key: str, name: str, weight: float = 1):
         super().__init__(name, weight)
@@ -88,14 +91,25 @@ class MultiLoss(nn.Module):
 
         self.losses = nn.ModuleList(losses)
 
-    def forward(self, info):
+    def forward(
+        self, 
+        info, 
+        dynamic_weights = {}
+    ):
         total_loss = 0
 
         losses = {}
 
         for loss_module in self.losses:
             module_loss = loss_module(info)
-            total_loss += module_loss
+            
+            # new impl for dynamic weighting of loss if passed in forward(). otherwise use original weight
+            dynamic_weight = dynamic_weights.get(loss_module.name, None)
+            if dynamic_weight is not None:
+                total_loss += dynamic_weight * module_loss
+            else:
+                total_loss += module_loss
+                
             losses[loss_module.name] = module_loss
 
         return total_loss, losses
