@@ -1,0 +1,18 @@
+{
+    "dataset_type": "location_caption_pair_manifests",
+    "custom_metadata_module": "stable_audio_tools/configs/dataset_configs/custom_metadata/location_caption_pair.py",
+    "custom_metadata_module_valid": "stable_audio_tools/configs/dataset_configs/custom_metadata/location_caption_pair.py",
+    "random_crop": false,
+    "datasets": [
+        {
+            "id": "location_caption_pair_train_example",
+            "path": "/path/to/examples/location_caption_pair_train_example.json"
+        }
+    ],
+    "datasets_valid": [
+        {
+            "id": "location_caption_pair_valid_example",
+            "path": "/path/to/examples/location_caption_pair_valid_example.json"
+        }
+    ]
+}
