@@ -1,3 +1,5 @@
+# modified from stable-audio-tools under the MIT license
+
 import typing as tp
 
 import torch
@@ -9,6 +11,7 @@ from x_transformers import ContinuousTransformerWrapper, Encoder
 
 from .blocks import FourierFeatures
 from .transformer import ContinuousTransformer
+from .etta_transformer import ETTATransformerWrapper
 
 class DiffusionTransformer(nn.Module):
     def __init__(self, 
@@ -23,7 +26,7 @@ class DiffusionTransformer(nn.Module):
         prepend_cond_dim=0,
         depth=12,
         num_heads=8,
-        transformer_type: tp.Literal["x-transformers", "continuous_transformer"] = "x-transformers",
+        transformer_type: tp.Literal["x-transformers", "continuous_transformer", "etta_transformer"] = "x-transformers",
         global_cond_type: tp.Literal["prepend", "adaLN"] = "prepend",
         **kwargs):
 
@@ -123,7 +126,25 @@ class DiffusionTransformer(nn.Module):
                 global_cond_dim=global_dim,
                 **kwargs
             )
-             
+
+        elif self.transformer_type == "etta_transformer":
+            assert self.global_cond_type == "adaLN",\
+                f"NVTransformer only supports global_cond_type='adaLN'!"
+            # The global conditioning is projected to the embed_dim already at this point
+            global_dim = embed_dim
+                
+            self.transformer = ETTATransformerWrapper(
+                dim=embed_dim,
+                depth=depth,
+                dim_in=dim_in * patch_size,
+                dim_out=io_channels * patch_size,
+                num_heads=num_heads,
+                has_xattn=cond_token_dim > 0,
+                cond_token_dim = cond_token_dim,
+                global_cond_dim=global_dim,
+                **kwargs
+            )
+                     
         else:
             raise ValueError(f"Unknown transformer type: {self.transformer_type}")
 
@@ -216,6 +237,9 @@ class DiffusionTransformer(nn.Module):
         elif self.transformer_type == "mm_transformer":
             output = self.transformer(x, context=cross_attn_cond, mask=mask, context_mask=cross_attn_cond_mask, **extra_args, **kwargs)
 
+        elif self.transformer_type == "etta_transformer":
+            output = self.transformer(x, cond=cross_attn_cond, x_mask=mask, cond_mask=cross_attn_cond_mask, **extra_args, **kwargs)
+            
         output = rearrange(output, "b t c -> b c t")[:,:,prepend_length:]
 
         if self.patch_size > 1:
@@ -253,8 +277,8 @@ class DiffusionTransformer(nn.Module):
 
         if cross_attn_cond_mask is not None:
             cross_attn_cond_mask = cross_attn_cond_mask.bool()
-
-            cross_attn_cond_mask = None # Temporarily disabling conditioning masks due to kernel issue for flash attention
+            if self.transformer_type != "etta_transformer": # can handle cross_attn_cond_mask depending on whether we use flash attention or not
+                cross_attn_cond_mask = None # Temporarily disabling conditioning masks due to kernel issue for flash attention
 
         if prepend_cond_mask is not None:
             prepend_cond_mask = prepend_cond_mask.bool()

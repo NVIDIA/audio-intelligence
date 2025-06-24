@@ -1,3 +1,5 @@
+# modified from stable-audio-tools under the MIT license
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -505,42 +507,48 @@ class DACGANLoss(nn.Module):
     generated waveforms/spectrograms compared to ground truth
     waveforms/spectrograms. Computes the loss for both the
     discriminator and the generator in separate functions.
+    NOTE: modified from original stable-audio-tools:
+    1) placing real first and fake second,
+    2) removing detach() from d_real during loss_feature calc.
+    It still uses sum over all losses so the magnitude range is different in EnCodec-tuned weights!
     """
 
     def __init__(self, **discriminator_kwargs):
         super().__init__()
         self.discriminator = DACDiscriminator(**discriminator_kwargs)
 
-    def forward(self, fake, real):
-        d_fake = self.discriminator(fake)
+    def forward(self, real, fake):
         d_real = self.discriminator(real)
-        return d_fake, d_real
+        d_fake = self.discriminator(fake)
+        
+        return d_real, d_fake 
 
-    def discriminator_loss(self, fake, real):
-        d_fake, d_real = self.forward(fake.clone().detach(), real)
+    def discriminator_loss(self, real, fake):
+        d_real, d_fake = self.forward(real, fake.clone().detach())
 
         loss_d = 0
-        for x_fake, x_real in zip(d_fake, d_real):
-            loss_d += torch.mean(x_fake[-1] ** 2)
+        for x_real, x_fake in zip(d_real, d_fake):
             loss_d += torch.mean((1 - x_real[-1]) ** 2)
+            loss_d += torch.mean(x_fake[-1] ** 2)
+            
         return loss_d
 
-    def generator_loss(self, fake, real):
-        d_fake, d_real = self.forward(fake, real)
+    def generator_loss(self, real, fake):
+        d_real, d_fake = self.forward(real, fake)
 
         loss_g = 0
         for x_fake in d_fake:
             loss_g += torch.mean((1 - x_fake[-1]) ** 2)
 
         loss_feature = 0
-
         for i in range(len(d_fake)):
             for j in range(len(d_fake[i]) - 1):
-                loss_feature += F.l1_loss(d_fake[i][j], d_real[i][j].detach())
+                loss_feature += F.l1_loss(d_real[i][j], d_fake[i][j])
+                
         return loss_g, loss_feature
     
-    def loss(self, fake, real):
-        gen_loss, feature_distance = self.generator_loss(fake, real)
-        dis_loss = self.discriminator_loss(fake, real)
+    def loss(self, real, fake):
+        gen_loss, feature_distance = self.generator_loss(real, fake)
+        dis_loss = self.discriminator_loss(real, fake)
 
         return dis_loss, gen_loss, feature_distance
