@@ -119,7 +119,7 @@ def main(args):
     # Define the valid precision values
     valid_precisions = ['32-true', 'bf16-mixed', '16-mixed']
     # List of possible model config keys and their corresponding args attributes for overriding
-    config_keys = ['save_dir', 'precision', 'batch_size', 'num_gpus', 'num_nodes', 'gradient_clip_val', 'checkpoint_every']
+    config_keys = ['save_dir', 'precision', 'strategy', 'batch_size', 'num_gpus', 'num_nodes', 'gradient_clip_val', 'checkpoint_every', 'accum_batches']
     for key in config_keys:
         if key in model_config:
             setattr(args, key, str(model_config[key]) if key in ['precision', 'save_dir'] else model_config[key])
@@ -171,10 +171,12 @@ def main(args):
         print(f"loading wrapper_ckpt_path: {args.wrapper_ckpt_path}")
         copy_state_dict(training_wrapper, load_ckpt_state_dict(args.wrapper_ckpt_path))
     
+    # use tensorboard for logging
     tensorboard_logger = pl.loggers.TensorBoardLogger(save_dir=args.save_dir, name=args.name, version='', sub_dir="tb_logs")
 
     exc_callback = ExceptionCallback()
     
+    # training step based checkpoint callback
     checkpoint_dir = os.path.join(args.save_dir, args.name)
     ckpt_callback = pl.callbacks.ModelCheckpoint(
         every_n_train_steps=args.checkpoint_every,
@@ -184,12 +186,15 @@ def main(args):
         mode="max"
         
     )
-    train_time_interval_minutes = 60 # save checkpoint every hour
+    
+    # training time based checkpoint callback
+    train_time_interval_minutes = 60 # save latest checkpoint every hour and point it to last.ckpt
     timed_ckpt_callback = pl.callbacks.ModelCheckpoint(
         train_time_interval=timedelta(minutes=train_time_interval_minutes),
         dirpath=checkpoint_dir,
         save_last='link'
     )
+    
     save_model_config_callback = ModelConfigEmbedderCallback(model_config)
 
     demo_callback = create_demo_callback_from_config(model_config, demo_dl=train_dl)
@@ -246,7 +251,7 @@ def main(args):
         log_every_n_steps=1,
         check_val_every_n_epoch=None,
         val_check_interval=model_config.training.demo.demo_every, # use demo_every for validation loss tracking.
-        max_epochs=10000000,
+        max_steps=model_config.training.get("max_steps", 2000000), # default to 2M steps if not specified in model_config
         default_root_dir=args.save_dir,
         gradient_clip_val=args.gradient_clip_val, # unsupported for manual optimization
         reload_dataloaders_every_n_epochs = 0,

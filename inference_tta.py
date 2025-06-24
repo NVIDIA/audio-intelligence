@@ -41,7 +41,7 @@ def get_local_pretrained_model(model_ckpt_path: str, strict: bool=True):
     with open(config_path) as f:
         config = json.load(f)
         
-    try: # internal models has model_config within "model_config key"
+    try: # models has model_config within "model_config key"
         model_config = config["model_config"]
     except KeyError: # public model from stability json config itself is model_config
         model_config = config
@@ -67,7 +67,8 @@ def generate_audio_from_caption(
     sigma_max,
     sampler_type,
     bad_model,
-    autoguidance_scale
+    autoguidance_scale,
+    batch_size=1
 ):
     """
     Generate audio from a text caption using the diffusion model.
@@ -93,6 +94,7 @@ def generate_audio_from_caption(
         steps=steps,
         cfg_scale=cfg_scale,
         conditioning=conditioning,
+        batch_size=batch_size,
         sample_size=sample_size,
         device=device,
         sigma_min=sigma_min,
@@ -101,8 +103,7 @@ def generate_audio_from_caption(
         bad_model=bad_model,
         autoguidance_scale=autoguidance_scale,
     )
-
-    output = rearrange(output, "b d n -> d (b n)")
+    
     output = (
         output.to(torch.float32).div(torch.max(torch.abs(output))).clamp(-1, 1).cpu()
     )  # [-1, 1] float
@@ -123,24 +124,27 @@ def resample(audio, orig_sr, target_sr):
     audio = librosa.resample(audio, orig_sr=orig_sr, target_sr=target_sr)
     return audio
 
-def save_audio_and_caption(output_dir, base_name, index, audio, caption, target_sample_rate):
+def save_audio_and_caption(output_dir, base_name, index, batch_idx, audio, caption, target_sample_rate):
     """
     Save generated audio and corresponding caption to files.
     
     Args:
         output_dir: Directory to save files
         base_name: Base name for the output files
-        index: Index for multiple generations with the same base name
+        index: Index for multiple captions with the same base name
+        batch_idx: Index for multiple variations of the same caption
         audio: Audio data to save
         caption: Caption text to save
         target_sample_rate: Sample rate for the output audio file
     """
-    audio_file_name = (
-        f"{base_name}.wav" if index is None else f"{base_name}_{index}.wav"
-    )
-    caption_file_name = (
-        f"{base_name}.txt" if index is None else f"{base_name}_{index}.txt"
-    )
+    
+    # For batch variations, add _varN suffix after the caption index
+    if batch_idx is not None:
+        audio_file_name = f"{base_name}_{index}_var{batch_idx}.wav"
+        caption_file_name = f"{base_name}_{index}_var{batch_idx}.txt"
+    else:
+        audio_file_name = f"{base_name}_{index}.wav"
+        caption_file_name = f"{base_name}_{index}.txt"
 
     audio_file_path = os.path.join(output_dir, audio_file_name)
     caption_file_path = os.path.join(output_dir, caption_file_name)
@@ -164,6 +168,7 @@ def main(
     autoguidance_scale = None,
     text_prompt: str = None,
     target_sample_rate: int = 48000,
+    batch_size: int = 1,
 ):
     """
     Main function to generate audio from text prompts using a diffusion model.
@@ -181,7 +186,8 @@ def main(
         bad_model_ckpt_path: Path to bad model for autoguidance
         autoguidance_scale: Scale for autoguidance
         text_prompt: Text prompt from command line
-        target_sample_rate: Sample rate for output audio (default: 48000)
+        target_sample_rate: Sample rate for output audio (default: 48000),
+        batch_size: Batch size for multiple audio variant generation (default: 1)
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -255,6 +261,7 @@ def main(
     print(f"bad_model_ckpt_path: {bad_model_ckpt_path}")
     print(f"autoguidance_scale: {autoguidance_scale}")
     print(f"target_sample_rate: {target_sample_rate}")
+    print(f"batch_size: {batch_size}")
     print(f"######################################################################")
 
     # Read data from json_file, text_dir, or text_prompt
@@ -310,11 +317,11 @@ def main(
                 "seconds_start": seconds_start,
                 "seconds_total": seconds_total,
             }
-        ]
+        ] * batch_size
 
         # Generate audio using the appropriate settings for diffusion objective
         with torch.inference_mode():
-            output = generate_audio_from_caption(
+            batch_output = generate_audio_from_caption(
                 model,
                 steps,
                 cfg_scale,
@@ -326,20 +333,34 @@ def main(
                 sampler_type,
                 bad_model,
                 autoguidance_scale,
+                batch_size=batch_size,
             )
-        output = output.numpy()
+            
+        # Process each item in the batch
+        for batch_idx in range(batch_size):
+            single_output = batch_output[batch_idx]
+            
+            if single_output.shape[-1] > seconds_total * sample_rate:
+                single_output = single_output[..., : seconds_total * sample_rate]
+            
+            single_output = single_output.numpy()  # Convert to numpy array
+            
+            if sample_rate != target_sample_rate:
+                # Resample to target sample rate
+                single_output= resample(single_output, sample_rate, target_sample_rate)
 
-        # clip duration to seconds_total for benchmark. this ensures that all output are in seconds_total
-        if output.shape[-1] > seconds_total * sample_rate:
-            output = output[..., : seconds_total * sample_rate]
-
-        # Resample to target sample rate
-        output = resample(output, sample_rate, target_sample_rate)
-
-        # Change output shape to [T, channel for sf.write]
-        output = np.transpose(output)
-
-        save_audio_and_caption(output_dir, base_name, index, output, caption, target_sample_rate)
+            # Change output shape to [T, channel] for sf.write
+            single_output = np.transpose(single_output)
+            
+            save_audio_and_caption(
+                output_dir=output_dir, 
+                base_name=base_name,
+                index=index, 
+                batch_idx=batch_idx if batch_size > 1 else None,  # Only add variation suffix if batch_size > 1
+                audio=single_output, 
+                caption=caption, 
+                target_sample_rate=target_sample_rate
+            )
 
     print(f"----------------------------------------------------------------------")
     if json_file_path:
@@ -427,7 +448,14 @@ Example usage with json manifest:
     
     # Sampling hyperparameters
     parser.add_argument(
-        "--sampler_type", type=str, default="euler", help="Sampler type for diffusion (default: euler)"
+        "--batch_size",
+        type=int,
+        default=1,
+        help="Batch size for multiple audio variant generation for each caption (default: 1)",
+    )
+
+    parser.add_argument(
+        "--sampler_type", type=str, default="dpmpp", help="Sampler type for diffusion (default: dpmpp)"
     )
     parser.add_argument(
         "--steps", type=int, default=100, help="Number of diffusion steps (default: 100)"
@@ -455,7 +483,7 @@ Example usage with json manifest:
         default=None,
         help="Scale for autoguidance using bad model (required if bad_model_ckpt_path is provided)",
     )
-
+    
     args = parser.parse_args()
 
     # Ensure that only one of --json_file, --text_dir, or --text_prompt is provided
@@ -477,4 +505,5 @@ Example usage with json manifest:
         args.autoguidance_scale,
         args.text_prompt,
         args.target_sample_rate,
+        args.batch_size,
     )

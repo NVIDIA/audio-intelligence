@@ -1,10 +1,17 @@
 # ETTA: Elucidating the Design Space of Text-to-Audio Models
 
-#### Sang-gil Lee*, Zhifeng Kong*, Arushi Goel, Sungwon Kim, Rafael Valle, Bryan Catanzaro
+#### Sang-gil Lee*, Zhifeng Kong*, Arushi Goel, Sungwon Kim, Rafael Valle, Bryan Catanzaro (*Equal contribution.)
 
-(*Equal contribution.)
+[[Paper]](https://arxiv.org/abs/2412.19351) - [[Code]](https://github.com/NVIDIA/elucidated-text-to-audio) - [[Project Page]](https://research.nvidia.com/labs/adlr/ETTA/)
 
-A customized stable-audio-tools.
+
+## Overview
+
+This repository contains model, training, and inference code implementation of [ETTA: Elucidating the Design Space of Text-to-Audio Models](https://arxiv.org/abs/2412.19351) (ICML 2025):
+
+* Synthetic audio caption generation pipeline is built on top of [Audio Flamingo](https://github.com/NVIDIA/audio-flamingo) from NVIDIA.
+
+* Text-to-audio model is built on top of [`stable-autdio-tools`](https://github.com/Stability-AI/stable-audio-tools) from Stability AI.
 
 ## Installation
 
@@ -28,53 +35,73 @@ docker build --progress plain -t etta:latest .
 docker run --gpus all etta:latest
 ```
 
-## Quickstart 
+## Inference Examples
 
-ETTA inference on a single GPU
+Below is an example ETTA inference script on a single GPU:
 ```
 CUDA_VISIBLE_DEVICES=0 python inference_tta.py \
---text_dir /path/to/debug_stable_audio_captions \
---output_dir /path/to/debug_stable_audio_samples \
---model_ckpt_path /path/to/etta_dit/model_unwrap_step_1000000.ckpt \
+--text_prompt "A hip-hop track using sounds from a construction site—hammering nails as the beat, drilling sounds as scratches, and metal clanks as rhythm accents." "A saxophone that sounds like meowing of cat." \
+--output_dir ./tmp \
+--model_ckpt_path /path/to/your/etta/model_unwrap.ckpt \
+--target_sample_rate 44100 \
 --sampler_type euler \
 --steps 100 \
 --cfg_scale 3.5 \
 --seconds_start 0 \
---seconds_total 10
+--seconds_total 10 \
+--batch_size 4
 ```
 
-train VAE on a single GPU
+
+## Training Examples
+
+Below is an example command to train ETTA-VAE on 8 GPUs:
 ```
-CUDA_VISIBLE_DEVICES=0 python train.py \
---num_gpus 1 \
+NUM_GPUS=8 && \
+torchrun --nproc_per_node=$NUM_GPUS train.py \
 --name DEBUG_etta_vae \
 --dataset_config stable_audio_tools/configs/dataset_configs/etta_vae_training_example.json \
 --model_config stable_audio_tools/configs/model_configs/autoencoders/etta_vae.json \
 --save_dir tmp --ckpt_path last \
 --enable_progress_bar true \
+--seed 2025 \
+--num_gpus $NUM_GPUS \
+--batch_size 8 \
 --params \
-batch_size=8 \
+training.max_steps=2800000 \
 training.loss_configs.bottleneck.weights.kl=0.0001
 ```
 
-train ETTA on a single GPU
+Below is an example command to train ETTA-DiT on 8 GPUs:
 ```
-CUDA_VISIBLE_DEVICES=0 python train.py \
+NUM_GPUS=8 && \
+torchrun --nproc_per_node=$NUM_GPUS train.py \
 --num_gpus 1 \
 --name DEBUG_etta_dit \
 --dataset_config stable_audio_tools/configs/dataset_configs/etta_dit_training_example.json \
 --model_config stable_audio_tools/configs/model_configs/txt2audio/etta_dit.json \
 --save_dir tmp --ckpt_path last \
 --enable_progress_bar true \
+--seed 2025 \
+--num_gpus $NUM_GPUS \
+--batch_size 8 \
 --params \
 pretransform_ckpt_path=/path/to/etta_vae/model_unwrap_step_2800000.ckpt \
-batch_size=16 \
-model.diffusion.config.depth=24
+model.diffusion.config.depth=24 \
+training.max_steps=1000000
+```
+
+Below is an example command to unwrap a trained model into `model_unwrap.ckpt`:
+```
+CKPT_DIR=/path/to/your/etta &&
+python unwrap_model.py \
+--model-config $CKPT_DIR/config.json \
+--ckpt-path $CKPT_DIR/epoch=x-step=xxxxxx.ckpt \
+--name $CKPT_DIR/model_unwrap
 ```
 
 
 ## Citation
-
 ```bibtex
 @article{lee2024etta,
   title={ETTA: Elucidating the Design Space of Text-to-Audio Models},

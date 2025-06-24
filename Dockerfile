@@ -2,7 +2,7 @@
 # start of Dockerfile
 #############################
 # start with latest official pytorch docker
-FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
+FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
 
 # to minimize node stress
 ENV MAX_JOBS=8
@@ -22,7 +22,7 @@ WORKDIR /app
 # install stable-audio-tools relatad pip packages with loose version checks
 #############################
 RUN pip install flash-attn --no-build-isolation
-RUN pip install numpy soundfile pedalboard jupyter notebook packaging alias-free-torch auraloss descript-audio-codec einops einops-exts ema-pytorch encodec gradio huggingface_hub importlib-resources k-diffusion laion-clap local-attention pandas prefigure pytorch_lightning lightning pywavelets pypesq safetensors sentencepiece torchmetrics tqdm transformers v-diffusion-pytorch vector-quantize-pytorch wandb webdataset x-transformers phaseaug perceiver-pytorch diffusers["torch"] deepspeed
+RUN pip install numpy soundfile pedalboard jupyter notebook packaging alias-free-torch auraloss descript-audio-codec einops einops-exts ema-pytorch encodec gradio huggingface_hub importlib-resources k-diffusion laion-clap local-attention pandas prefigure pytorch_lightning lightning pywavelets pypesq safetensors sentencepiece torchmetrics tqdm transformers v-diffusion-pytorch vector-quantize-pytorch wandb webdataset x-transformers diffusers["torch"] deepspeed
 
 #############################
 # end of Dockerfile

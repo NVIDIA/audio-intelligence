@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name='etta',
     version='0.0.1',
-    url='',
+    url='https://github.com/NVIDIA/elucidated-text-to-audio',
     author='NVIDIA',
     description='Training and inference code for ETTA, built on top of stable-audio-tools from Stability AI',
     packages=find_packages(),  
@@ -39,6 +39,7 @@ setup(
         'vector-quantize-pytorch>=1.9.14',
         'wandb>=0.15.4',
         'webdataset>=0.2.48',
-        'x-transformers>=1.27.0'
+        'x-transformers>=1.27.0',
+        'deepspeed'
     ],
 )
