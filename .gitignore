@@ -164,5 +164,6 @@ tmp/
 *.ckpt
 *.wav
 wandb/*
+.gradio/
 
 stable_audio_tools/configs/dataset_configs/*filenames_cache*/*

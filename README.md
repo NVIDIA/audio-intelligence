@@ -76,7 +76,6 @@ Below is an example command to train ETTA-DiT on 8 GPUs:
 ```
 NUM_GPUS=8 && \
 torchrun --nproc_per_node=$NUM_GPUS train.py \
---num_gpus 1 \
 --name DEBUG_etta_dit \
 --dataset_config stable_audio_tools/configs/dataset_configs/etta_dit_training_example.json \
 --model_config stable_audio_tools/configs/model_configs/txt2audio/etta_dit.json \

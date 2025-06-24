@@ -228,7 +228,11 @@ def main(args):
     # Combine args and model_config dicts so far used. This defines all params except dataset_config
     args_dict = vars(args)
     args_dict.update({"model_config": model_config})
-    print(pformat(args_dict))
+
+    # print config & model on rank zero
+    if int(os.environ["RANK"]) == 0:
+        print(pformat(args_dict, width=256))
+        print(model)
     
     # Save args_dict and dataset_config to separate JSON files for future reference
     if not os.path.exists(os.path.join(args.save_dir, args.name)):
