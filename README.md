@@ -1,15 +1,20 @@
 # ETTA: Elucidating the Design Space of Text-to-Audio Models
 
-#### Sang-gil Lee*, Zhifeng Kong*, Arushi Goel, Sungwon Kim, Rafael Valle, Bryan Catanzaro (*Equal contribution.)
+#### **Sang-gil Lee***, **Zhifeng Kong***, Arushi Goel, Sungwon Kim, Rafael Valle, Bryan Catanzaro (*Equal contribution.)
 
-[[Paper]](https://arxiv.org/abs/2412.19351) - [[Code]](https://github.com/NVIDIA/elucidated-text-to-audio) - [[Project Page]](https://research.nvidia.com/labs/adlr/ETTA/)
+<div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
+  <a href="https://arxiv.org/abs/2412.19351"><img src="https://img.shields.io/badge/arXiv-2412.19351-AD1C18" style="margin-right: 5px;"></a>
+  <a href="https://research.nvidia.com/labs/adlr/ETTA/"><img src="https://img.shields.io/badge/Demo_page-228B22" style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/elucidated-text-to-audio/stargazers"><img src="https://img.shields.io/github/stars/NVIDIA/elucidated-text-to-audio.svg?style=social"></a>
+</div>
+<!-- [[Paper]](https://arxiv.org/abs/2412.19351) - [[Code]](https://github.com/NVIDIA/elucidated-text-to-audio) - [[Project Page]](https://research.nvidia.com/labs/adlr/ETTA/) -->
 
 
 ## Overview
 
 This repository contains model, training, and inference code implementation of [ETTA: Elucidating the Design Space of Text-to-Audio Models](https://arxiv.org/abs/2412.19351) (ICML 2025):
 
-* Synthetic audio caption generation pipeline is built on top of [Audio Flamingo](https://github.com/NVIDIA/audio-flamingo) from NVIDIA.
+* Synthetic audio caption generation pipeline is built on top of [Audio Flamingo](https://github.com/NVIDIA/audio-flamingo) from NVIDIA. See ```AFSynthetic/README.md``` for more details.
 
 * Text-to-audio model is built on top of [`stable-audio-tools`](https://github.com/Stability-AI/stable-audio-tools) from Stability AI.
 
