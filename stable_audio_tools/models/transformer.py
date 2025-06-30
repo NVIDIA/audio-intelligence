@@ -1,3 +1,7 @@
+# Copyright (c) 2025 NVIDIA CORPORATION. 
+#   Licensed under the MIT license.
+# modified from stable-audio-tools under the MIT license
+
 from functools import reduce, partial
 from packaging import version
 

@@ -1,3 +1,5 @@
+# Copyright (c) 2025 NVIDIA CORPORATION. 
+#   Licensed under the MIT license.
 # Copied and modified from https://github.com/archinetai/audio-diffusion-pytorch/blob/v0.0.94/audio_diffusion_pytorch/modules.py under MIT License
 # License can be found in LICENSES/LICENSE_ADP.txt
 

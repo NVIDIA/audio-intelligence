@@ -1,3 +1,7 @@
+# Copyright (c) 2025 NVIDIA CORPORATION. 
+#   Licensed under the MIT license.
+# modified from stable-audio-tools under the MIT license
+
 import argparse
 from lightning.pytorch.utilities.deepspeed import convert_zero_checkpoint_to_fp32_state_dict
 

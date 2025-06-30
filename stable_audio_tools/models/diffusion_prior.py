@@ -1,3 +1,7 @@
+# Copyright (c) 2025 NVIDIA CORPORATION. 
+#   Licensed under the MIT license.
+# modified from stable-audio-tools under the MIT license
+
 from enum import Enum
 import typing as tp
 

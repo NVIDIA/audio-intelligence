@@ -1,3 +1,5 @@
+# Copyright (c) 2025 NVIDIA CORPORATION. 
+#   Licensed under the MIT license.
 # Copied from https://github.com/facebookresearch/audiocraft/blob/main/audiocraft/modules/codebooks_patterns.py under MIT License
 # License available in LICENSES/LICENSE_META.txt
 

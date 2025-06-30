@@ -1,3 +1,5 @@
+# Copyright (c) 2025 NVIDIA CORPORATION. 
+#   Licensed under the MIT license.
 # copied and modified from https://github.com/mewwts/addict/blob/master/addict/addict.py under the MIT license.
 # with additional update_params() for convinence
 # LICENSE is in LICENCES directory.
