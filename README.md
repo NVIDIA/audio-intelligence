@@ -6,9 +6,9 @@ This repository contains implementation of several state-of-the-art audio intell
 
 # Projects
 
-## Audio Understanding, Generation, and Reasoning
+# Audio Understanding, Generation, and Reasoning
 
-### Audio Flamingo 3
+### Audio Flamingo 3 (Audio Understanding)
 
 **Advancing Audio Intelligence with Fully Open Large Audio Language Models**
 
@@ -52,7 +52,7 @@ Audio Flamingo 3 is a 7B audio language model using the [LLaVA](https://arxiv.or
 
 ---
 
-### UALM
+### UALM (Audio Understanding and Generation)
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
   <a href="https://arxiv.org"><img src="https://img.shields.io/badge/arXiv-coming_soon-AD1C18" style="margin-right: 5px;"></a>
   <a href="https://research.nvidia.com/labs/adlr/UALM/"><img src="https://img.shields.io/badge/Demo_page-228B22" style="margin-right: 5px;"></a>
@@ -62,7 +62,7 @@ Audio Flamingo 3 is a 7B audio language model using the [LLaVA](https://arxiv.or
 
 ---
 
-### ETTA
+### ETTA (Audio Generation)
 
 **Elucidating the Design Space of Text-to-Audio Models**
 
@@ -80,7 +80,7 @@ ETTA is a 1.4B latent diffusion model for text-to-audio generation. We trained E
 
 ---
 
-### Fugatto 1
+### Fugatto 1 (Audio Editing and Generation)
 **Foundational Generative Audio Transformer Opus 1**
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
@@ -94,7 +94,19 @@ Fugatto is a versatile audio synthesis and transformation model capable of follo
 
 ---
 
-### TangoFlux
+### DCASE 2025 Challenge Task 5 (Audio Understanding Challenge)
+**Multi-Domain Audio Question Answering Toward Acoustic Content Reasoning in the DCASE 2025 Challenge**
+
+<div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
+  <a href="https://arxiv.org/abs/2505.07365"><img src="https://img.shields.io/badge/arXiv-2505.07365-AD1C18" style="margin-right: 5px;"></a>
+  <a href="https://dcase.community/challenge2025/task-audio-question-answering"><img src="https://img.shields.io/badge/DCASE-Task Description-228B22" style="margin-right: 5px;"></a>
+  <a href="https://huggingface.co/datasets/PeacefulData/2025_DCASE_AudioQA_Official"><img src='https://img.shields.io/badge/🤗-PeacefulData-ED5A22' style="margin-right: 5px;"></a>
+  <a href="https://huggingface.co/PeacefulData/2025_DCASE_AudioQA_Baselines"><img src='https://img.shields.io/badge/🤗-Baselines-ED5A22' style="margin-right: 5px;"></a>
+</div>
+
+---
+
+### TangoFlux (Audio Generation)
 **Tangoflux: Super fast and faithful text to audio generation with flow matching and clap-ranked preference optimization**
 
 
@@ -117,21 +129,47 @@ Fugatto is a versatile audio synthesis and transformation model capable of follo
 
 TangoFlux is an efficient and high-quality text-to-audio model with FluxTransformer and CLAP-ranked preference optimization. This project was in collaboration with SUTD and Lambda Labs.
 
+---
 
-### OMCAT
+### OMCAT (Audio-Visual Understanding)
 **Omni Context Aware Transformer**
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
-  <a href="https://arxiv.org"><img src="https://img.shields.io/badge/arXiv-2410.12109-AD1C18" style="margin-right: 5px;"></a>
+  <a href="https://arxiv.org/abs/2410.12109"><img src="https://img.shields.io/badge/arXiv-2410.12109-AD1C18" style="margin-right: 5px;"></a>
   <a href="https://om-cat.github.io/"><img src="https://img.shields.io/badge/Demo_page-228B22" style="margin-right: 5px;"></a>
 </div>
 
 OMCAT is an audio-visual understanding model with ROTE (Rotary Time Embeddings).
 
+<br>
+<br>
+
 ---
 
-## Audio Enhancement
-### A2SB
+<br>
+<br>
+
+# Representation Learning
+
+### UniWav (Speech Codec)
+**Towards Unified Pre-training for Speech Representation Learning and Generation**
+
+<div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
+  <a href="https://arxiv.org/abs/2503.00733"><img src="https://img.shields.io/badge/arXiv-2503.00733-AD1C18" style="margin-right: 5px;"></a>
+  <a href="https://alexander-h-liu.github.io/uniwav-demo.github.io/"><img src="https://img.shields.io/badge/Demo_page-228B22" style="margin-right: 5px;"></a>
+</div>
+
+
+<br>
+<br>
+
+---
+
+<br>
+<br>
+
+# Audio Enhancement
+### A2SB (Bandwidth Extension and Inpainting)
 **Audio-to-Audio Schrodinger Bridges**
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
@@ -151,7 +189,7 @@ A2SB is an audio restoration model tailored for high-res music at 44.1kHz. It is
 
 --- 
 
-### CleanUNet
+### CleanUNet (Speech Denoising)
 
 **CleanUNet: Speech Denoising in the Waveform Domain with Self-Attention**
 
@@ -173,9 +211,15 @@ A2SB is an audio restoration model tailored for high-res music at 44.1kHz. It is
 
 CleanUNet is a causal speech denoising model on the raw waveform. CleanUNet 2 is a speech denoising model that combines the advantages of waveform denoiser and spectrogram denoiser and achieves the best of both worlds.
 
+<br>
+<br>
+
 ---
 
-## Text-to-Speech Models
+<br>
+<br>
+
+# Text-to-Speech Models
 ### BigVGAN-v2
 **A Universal Neural Vocoder with Large-Scale Training**
 
@@ -195,7 +239,7 @@ CleanUNet is a causal speech denoising model on the raw waveform. CleanUNet 2 is
   </a>
 </div>
 
-≈ 
+<br>
 
 BigVGAN-v2 is a widely-used universal vocoder that generalizes well for various out-of-distribution scenarios without fine-tuning. We release our checkpoints with various configurations such as sampling rates. 
 
@@ -236,9 +280,56 @@ Please refer to the [Magpie-TTS API](https://build.nvidia.com/nvidia/magpie-tts-
 DiffWave is the first diffusion model for raw waveform synthesis. It is a versatile waveform synthesis model for speech and non-speech generation. 
 <br> 
 
-### WaveGlow
-### FlowTron
-### RAD-TTS
+---
+
+### WaveGlow 
+**A Flow-based Generative Network for Speech Synthesis**
+
+<div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
+  <a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8683143"><img src="https://img.shields.io/badge/IEEE-paper-AD1C18" style="margin-right: 5px;"></a>
+  <a href="https://research.nvidia.com/labs/adlr/WaveGlow/"><img src="https://img.shields.io/badge/Demo page-228B22" style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/waveglow"><img src='https://img.shields.io/badge/Github-WaveGlow-9C276A' style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/waveglow/stargazers"><img src="https://img.shields.io/github/stars/NVIDIA/waveglow.svg?style=social"></a>
+</div>
+
+<br> 
+
+---
+
+### Flowtron
+**Flowtron: an Autoregressive Flow-based Generative Network for Text-to-Speech Synthesis**
+
+<div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
+  <a href="https://arxiv.org/abs/2005.05957"><img src="https://img.shields.io/badge/arxiv-2005.05957-AD1C18" style="margin-right: 5px;"></a>
+  <a href="https://research.nvidia.com/labs/adlr/Flowtron/"><img src="https://img.shields.io/badge/Demo page-228B22" style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/flowtron"><img src='https://img.shields.io/badge/Github-Flowtron-9C276A' style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/flowtron/stargazers"><img src="https://img.shields.io/github/stars/NVIDIA/flowtron.svg?style=social"></a>
+</div>
+
+<br> 
+
+---
+
+
+### RAD
+
+**RAD-TTS: Parallel Flow-Based TTS with Robust Alignment Learning and Diverse Synthesis**
+
+**RAD-MMM: Multilingual Multiaccented Multispeaker TTS with RADTTS**
+
+<div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
+  <a href="https://openreview.net/forum?id=0NQwnnwAORi"><img src="https://img.shields.io/badge/paper-RAD TTS-AD1C18" style="margin-right: 5px;"></a>
+  <a href="https://research.nvidia.com/labs/adlr/RADTTS/"><img src="https://img.shields.io/badge/Demo page-228B22" style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/radtts"><img src='https://img.shields.io/badge/Github-RAD TTS-9C276A' style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/radtts/stargazers"><img src="https://img.shields.io/github/stars/NVIDIA/radtts.svg?style=social"></a>
+</div>
+
+<div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
+  <a href="https://www.isca-archive.org/interspeech_2023/badlani23_interspeech.pdf"><img src="https://img.shields.io/badge/paper-RAD MMM-AD1C18" style="margin-right: 5px;"></a>
+  <a href="https://research.nvidia.com/labs/adlr/projects/radmmm/"><img src="https://img.shields.io/badge/Demo page-228B22" style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/RAD-MMM"><img src='https://img.shields.io/badge/Github-RAD MMM-9C276A' style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/RAD-MMM/stargazers"><img src="https://img.shields.io/github/stars/NVIDIA/RAD-MMM.svg?style=social"></a>
+</div>
 
 # License
 The codes for different projects may be released under different licenses, including MIT, NVIDIA OneWay Noncommercial License, NVIDIA Sourcecode License, and so on. Please refer to each project folder or their original GitHub links for the detailed licenses. 
