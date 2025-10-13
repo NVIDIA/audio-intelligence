@@ -4,10 +4,17 @@
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
   <a href="https://arxiv.org/abs/2412.19351"><img src="https://img.shields.io/badge/arXiv-2412.19351-AD1C18" style="margin-right: 5px;"></a>
+  <a href="https://arxiv.org/abs/2406.15487"><img src="https://img.shields.io/badge/arXiv-2406.15487-AD1C18" style="margin-right: 5px;"></a>
   <a href="https://research.nvidia.com/labs/adlr/ETTA/"><img src="https://img.shields.io/badge/Demo_page-228B22" style="margin-right: 5px;"></a>
   <a href="https://github.com/NVIDIA/elucidated-text-to-audio/stargazers"><img src="https://img.shields.io/github/stars/NVIDIA/elucidated-text-to-audio.svg?style=social"></a>
 </div>
 <!-- [[Paper]](https://arxiv.org/abs/2412.19351) - [[Code]](https://github.com/NVIDIA/elucidated-text-to-audio) - [[Project Page]](https://research.nvidia.com/labs/adlr/ETTA/) -->
+
+<br>
+<br>
+<div align="center">
+  <img class="img-full" src="ETTA_main_results.png" width="600">
+</div>
 
 
 ## Overview
