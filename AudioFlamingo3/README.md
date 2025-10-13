@@ -63,6 +63,23 @@ Audio Flamingo 3 is our latest model based on a 7B language model and the [LLaVA
 
 Audio Flamingo 3 can take up to 10 minutes of audio inputs, and has a streaming TTS module (AF3-Chat) to output voice. 
 
+<br>
+<br>
+
+
+<div align="center">
+  <img class="img-full" src="static/af3_radial-1.png" width="400">
+</div>
+
+<div align="center">
+  <img class="img-full" src="static/af3_sota.png" width="600">
+</div>
+
+
+<div align="center">
+  <img class="img-full" src="static/af3_main_diagram-1.png" width="800">
+</div>
+
 ## Audio Flamingo 2
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
@@ -125,25 +142,6 @@ Audio Flamingo is our first audio language model based on the [Flamingo](https:/
   <img class="img-full" src="https://github.com/NVIDIA/audio-flamingo/raw/legacy_audio_flamingo_1/assets/audio_flamingo_arch.png" width="600">
 </div>
 
-
-
-
-<br>
-<br>
-
-
-<div align="center">
-  <img class="img-full" src="static/af3_radial-1.png" width="400">
-</div>
-
-<div align="center">
-  <img class="img-full" src="static/af3_sota.png" width="600">
-</div>
-
-
-<div align="center">
-  <img class="img-full" src="static/af3_main_diagram-1.png" width="800">
-</div>
 
 ## Audio Flamingo Sound-CoT
 
