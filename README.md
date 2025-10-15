@@ -259,7 +259,7 @@ BigVGAN-v2 is a widely-used universal vocoder that generalizes well for various 
 
 <br>
 
-Please refer to the [Magpie-TTS API](https://build.nvidia.com/nvidia/magpie-tts-flow) for commercial use of NVIDIA's TTS models that leveraged techniques of these papers. 
+Please refer to the [Magpie-TTS API](https://build.nvidia.com/nvidia/magpie-tts-flow) for interactive demo of NVIDIA's TTS models that leveraged techniques of these papers. 
 
 ---
 
