@@ -8,9 +8,54 @@ This repository contains implementation of several state-of-the-art audio intell
 
 # Audio Understanding, Generation, and Reasoning
 
+
+### UALM (Audio Understanding and Generation)
+
+**UALM: Unified Audio Language Model for Understanding, Generation, and Reasoning (ICLR 2026 oral)**
+
+<div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
+  <a href="https://arxiv.org/abs/2510.12000"><img src="https://img.shields.io/badge/arXiv-2510.12000-AD1C18" style="margin-right: 5px;"></a>
+  <a href="https://research.nvidia.com/labs/adlr/UALM/"><img src="https://img.shields.io/badge/Demo_page-228B22" style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/audio-intelligence/tree/main/UALM"><img src='https://img.shields.io/badge/Github-UALM-9C276A' style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/audio-intelligence/stargazers"><img src="https://img.shields.io/github/stars/NVIDIA/audio-intelligence.svg?style=social"></a>
+</div>
+
+UALM is an advanced Audio-Language Model that **unifies** text and audio tasks including: text problem solving, audio understanding, text-to-audio generation, and multimodal reasoning across modalities. UALM matches the quality of state-of-the-art specialized models in each task, and is the first demonstration of cross-modal generative reasoning in the audio research domain.
+
+---
+
+### Music Flamingo (Music Understanding)
+
+**Music Flamingo: Scaling Music Understanding in Audio Language Models (ICLR 2026)**
+
+
+<div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
+  <a href="https://arxiv.org/abs/2511.10289"><img src="https://img.shields.io/badge/arXiv-2511.10289-AD1C18" style="margin-right: 5px;"></a>
+  <a href="https://research.nvidia.com/labs/adlr/MF/"><img src="https://img.shields.io/badge/Demo page-228B22" style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/audio-flamingo/tree/music_flamingo"><img src='https://img.shields.io/badge/Github-Music--Flamingo-9C276A' style="margin-right: 5px;"></a>
+  <a href="https://github.com/NVIDIA/audio-flamingo/stargazers"><img src="https://img.shields.io/github/stars/NVIDIA/audio-flamingo.svg?style=social"></a>
+</div>
+
+<div align="center" style="display: flex; justify-content: center; margin-top: 10px; flex-wrap: wrap; gap: 5px;">
+  <a href="https://huggingface.co/nvidia/music-flamingo-2601-hf">
+    <img src="https://img.shields.io/badge/🤗-Checkpoints-ED5A22.svg">
+  </a>
+  <a href="https://huggingface.co/datasets/nvidia/MF-Skills">
+    <img src="https://img.shields.io/badge/🤗-Dataset: MF--Skills-ED5A22.svg">
+  </a>
+</div>
+
+<div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
+<a href="https://huggingface.co/spaces/nvidia/music-flamingo"><img src="https://img.shields.io/badge/🤗-Gradio Demo (7B)-5F9EA0.svg" style="margin-right: 5px;"></a>
+</div>
+
+Music Flamingo is a fully open, state-of-the-art Large Audio-Language Model designed to advance music (including song) understanding in foundational audio models.
+
+---
+
 ### Audio Flamingo 3 (Audio Understanding)
 
-**Advancing Audio Intelligence with Fully Open Large Audio Language Models**
+**Advancing Audio Intelligence with Fully Open Large Audio Language Models (NeurIPS 2025)**
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
   <a href="https://arxiv.org/abs/2507.08128"><img src="https://img.shields.io/badge/arXiv-2507.08128-AD1C18" style="margin-right: 5px;"></a>
@@ -20,7 +65,7 @@ This repository contains implementation of several state-of-the-art audio intell
 </div>
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px; flex-wrap: wrap; gap: 5px;">
-  <a href="https://huggingface.co/nvidia/audio-flamingo-3">
+  <a href="https://huggingface.co/nvidia/audio-flamingo-3-hf">
     <img src="https://img.shields.io/badge/🤗-Checkpoints-ED5A22.svg">
   </a>
   <a href="https://huggingface.co/nvidia/audio-flamingo-3-chat">
@@ -52,19 +97,9 @@ Audio Flamingo 3 is a 7B audio language model using the [LLaVA](https://arxiv.or
 
 ---
 
-### UALM (Audio Understanding and Generation)
-<div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
-  <a href="https://arxiv.org"><img src="https://img.shields.io/badge/arXiv-coming_soon-AD1C18" style="margin-right: 5px;"></a>
-  <a href="https://research.nvidia.com/labs/adlr/UALM/"><img src="https://img.shields.io/badge/Demo_page-228B22" style="margin-right: 5px;"></a>
-  <a href="https://github.com/NVIDIA/audio-intelligence/tree/main/UALM"><img src='https://img.shields.io/badge/Github-UALM-9C276A' style="margin-right: 5px;"></a>
-  <a href="https://github.com/NVIDIA/audio-intelligence/stargazers"><img src="https://img.shields.io/github/stars/NVIDIA/audio-intelligence.svg?style=social"></a>
-</div>
-
----
-
 ### ETTA (Audio Generation)
 
-**Elucidating the Design Space of Text-to-Audio Models**
+**Elucidating the Design Space of Text-to-Audio Models (ICML 2025)**
 
 **Improving Text-To-Audio Models with Synthetic Captions**
 
@@ -81,11 +116,10 @@ ETTA is a 1.4B latent diffusion model for text-to-audio generation. We trained E
 ---
 
 ### Fugatto 1 (Audio Editing and Generation)
-**Foundational Generative Audio Transformer Opus 1**
+**Foundational Generative Audio Transformer Opus 1 (ICLR 2025)**
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
   <a href="https://openreview.net/pdf?id=B2Fqu7Y2cd"><img src="https://img.shields.io/badge/paper-Fugatto 1-AD1C18" style="margin-right: 5px;"></a>
-  <a href="https://blogs.nvidia.com/blog/fugatto-gen-ai-sound-model/"><img src="https://img.shields.io/badge/Demo_page-228B22" style="margin-right: 5px;"></a>
 </div>
 
 <br>
@@ -107,7 +141,7 @@ Fugatto is a versatile audio synthesis and transformation model capable of follo
 ---
 
 ### TangoFlux (Audio Generation)
-**Tangoflux: Super fast and faithful text to audio generation with flow matching and clap-ranked preference optimization**
+**Tangoflux: Super fast and faithful text to audio generation with flow matching and clap-ranked preference optimization (ICLR 2026)**
 
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
@@ -152,7 +186,7 @@ OMCAT is an audio-visual understanding model with ROTE (Rotary Time Embeddings).
 # Representation Learning
 
 ### UniWav (Speech Codec)
-**Towards Unified Pre-training for Speech Representation Learning and Generation**
+**Towards Unified Pre-training for Speech Representation Learning and Generation (ICLR 2025)**
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
   <a href="https://arxiv.org/abs/2503.00733"><img src="https://img.shields.io/badge/arXiv-2503.00733-AD1C18" style="margin-right: 5px;"></a>
@@ -221,7 +255,7 @@ CleanUNet is a causal speech denoising model on the raw waveform. CleanUNet 2 is
 
 # Text-to-Speech Models
 ### BigVGAN-v2
-**A Universal Neural Vocoder with Large-Scale Training**
+**A Universal Neural Vocoder with Large-Scale Training (ICLR 2023)**
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
   <a href="https://arxiv.org/abs/2206.04658"><img src="https://img.shields.io/badge/arXiv-2206.04658-AD1C18" style="margin-right: 5px;"></a>
@@ -264,7 +298,7 @@ Please refer to the [Magpie-TTS API](https://build.nvidia.com/nvidia/magpie-tts-
 ---
 
 ### DiffWave
-**A Versatile Diffusion Model for Audio Synthesis**
+**A Versatile Diffusion Model for Audio Synthesis (ICLR 2021 oral)**
 
 <div align="center" style="display: flex; justify-content: center; margin-top: 10px;">
   <a href="https://arxiv.org/abs/2009.09761"><img src="https://img.shields.io/badge/arXiv-2009.09761-AD1C18" style="margin-right: 5px;"></a>
