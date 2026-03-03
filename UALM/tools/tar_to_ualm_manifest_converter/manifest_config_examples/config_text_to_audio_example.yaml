@@ -1,0 +1,15 @@
+manifests:
+  train:
+  - id: CaptionToAudio-AudioCaps
+    manifest_source:
+      base_manifest_dir: /path/to/AudioCaps
+      splits:
+      - train
+    processing_options:
+      caption_keyname: text
+      data_weight: 1.0
+      location_keyname: audio
+      root_audio_dir: /path/to/AudioCaps
+      storage_backend: tarball_lustre
+      ualm_task: caption_to_audio
+  valid: []

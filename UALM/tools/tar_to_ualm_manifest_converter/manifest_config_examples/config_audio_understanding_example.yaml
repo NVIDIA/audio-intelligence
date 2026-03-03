@@ -1,0 +1,15 @@
+manifests:
+  train:
+  - id: AudioFlamingo-audiocaps-AudioCaptioning
+    manifest_source:
+      base_manifest_dir: /path/to/audiocaps-AudioCaptioning
+      splits:
+      - train
+    processing_options:
+      conversation_keyname: conversations
+      data_weight: 1.0
+      location_keyname: audio
+      root_audio_dir: /path/to/audiocaps-AudioCaptioning
+      storage_backend: tarball_lustre
+      ualm_task: audio_to_conversation
+    valid: []

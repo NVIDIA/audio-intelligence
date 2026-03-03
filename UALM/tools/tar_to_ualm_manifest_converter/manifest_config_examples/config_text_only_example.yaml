@@ -1,0 +1,8 @@
+manifests:
+  train:
+    - id: "text_subset_name"
+      manifest_source:
+        files:
+          - "/path/to/raw/text.jsonl"
+      processing_options:
+        data_weight: 1.0

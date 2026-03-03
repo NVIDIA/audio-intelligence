@@ -1,0 +1,568 @@
+# Copyright (c) 2026 NVIDIA CORPORATION.
+#   Licensed under the MIT license.
+
+#!/usr/bin/env python3
+# Copyright 2025 Jinchuan Tian (Carnegie Mellon University)
+#  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
+
+"""UALM job template implementation for multimodal language modeling."""
+
+import re
+from typing import Any, Callable, Dict
+import random
+import time
+import numpy as np
+import torch
+
+# torch.set_printoptions(threshold=float('inf'))
+
+from models.abs_job import AbsJobTemplate
+
+# Main ualm model
+from models.ualm.lm.parallel import ParallelHFModel
+
+# Multimodal IOs
+from models.ualm.multimodal_io.abs_io import AbsIO
+from models.ualm.multimodal_io.audio import (
+    ContinuousAudioIO,
+    DiscreteAudioIO,
+)
+from models.ualm.multimodal_io.text import HuggingFaceTextIO
+from models.ualm.task_conf_ualm import UALM_TASK_CONFIGS
+from utils.data import pad_list
+
+_multimodal_ios = {
+    "text": HuggingFaceTextIO,
+    "discrete_audio": DiscreteAudioIO,
+    "continuous_audio": ContinuousAudioIO,
+}
+
+_lms = {"parallel": ParallelHFModel}
+
+
+class UALMJobTemplate(AbsJobTemplate):
+    """Job template for UALM training tasks.
+
+    This class implements the specific model and data processing
+    configurations for speech language modeling tasks.
+    """
+
+    def __init__(self, config: Dict[str, Any], is_train: bool = False):
+        """Initialize the UALM job template.
+
+        Args:
+            config: Dictionary containing job configuration parameters.
+        """
+        super().__init__(config, is_train)
+
+        # (1) keep other configs
+        self.config = config
+
+        # (2) build tokenizers and vocabulary
+        io_config = config["multimodal_io"]
+        self.multimodal_io = dict()
+        for io_name, io_kwargs in io_config.items():
+            multimodal_io_class = _multimodal_ios[io_name]
+            assert issubclass(multimodal_io_class, AbsIO)
+            self.multimodal_io[io_name] = multimodal_io_class(**io_kwargs)
+
+        self.vocab, self.vocab_intervals = self._build_vocabulary()
+
+    def _build_vocabulary(self, num_special_tokens=256):
+        """Build unified vocabulary from special tokens and multimodal IOs.
+
+        Reserves fixed slots for special tokens then adds tokens from discrete IOs.
+        Returns vocabulary list and interval mappings for each modality.
+        """
+        # (1) Initial special token. We keep a fixed number of slots
+        vocab_intervals = {"special_token": [(0, num_special_tokens)]}
+        vocab = [
+            "<|pad|>",
+            "<|bos|>",
+            "<|eos|>",
+            "<|eot|>",
+            "<|system|>",
+            "<|user|>",
+            "<|assistant|>",
+            "<|text|>",
+            "<|audio|>",
+            "<|speech|>",
+            "<|image|>",
+            "<|video|>",
+            "<|toolcall|>",
+        ]
+        while len(vocab) < num_special_tokens:
+            vocab.append(f"<|unused_{len(vocab)}|>")
+
+        # (2) add vocabulary from each discrete multimodal IO.
+        start = num_special_tokens
+        for io_name, io in self.multimodal_io.items():
+            if io.is_discrete:
+                vocab.extend(io.get_vocabulary())
+                vocab_intervals[io_name] = [
+                    (start + this_start, start + this_end)
+                    for this_start, this_end in io.get_stream_interval()
+                ]
+                start = len(vocab)
+
+        assert len(vocab) == len(set(vocab)), "There are duplicated tokens in the vocab"
+
+        return vocab, vocab_intervals
+
+    def build_preprocessor(self) -> Callable:
+        """Build the data collation function for UALM.
+
+        Returns:
+            A callable function for collating UALM batch data.
+        """
+
+        processor_config = self.config["preprocessor"]
+        multimodal_io = {
+            io_name: io.copy_for_worker() for io_name, io in self.multimodal_io.items()
+        }
+        return UALMPreprocessor(
+            is_train=self.is_train,
+            multimodal_io=multimodal_io,
+            vocab=self.vocab,
+            vocab_intervals=self.vocab_intervals,
+            audio_input=processor_config["audio_input"],
+            audio_output=processor_config["audio_output"],
+            loss_region=processor_config["loss_region"],
+            batchfy_method=self.config["data_loading"].get("batchfy_method", "bucket"),
+            audio_cfg=processor_config.get("audio_cfg", 0.0),
+        )
+
+    def build_model(self) -> torch.nn.Module:
+        """Build the UALM model.
+
+        Returns:
+            A UALM model instance.
+        """
+
+        model_config = self.config["model"]
+        model_class = _lms[model_config["model_choice"]]
+
+        model = model_class(
+            model_hf_tag=model_config["model_hf_tag"],
+            multimodal_io=self.multimodal_io,
+            vocab=self.vocab,
+            vocab_intervals=self.vocab_intervals,
+            **model_config["model_conf"],
+        )
+
+        if model_config.get("activation_checkpointing", False):
+            model.gradient_checkpointing_enable()
+
+        return model
+
+
+class UALMPreprocessor:
+    """Preprocessor for UALM data handling.
+
+    Converts raw data into model-ready format with tokenization,
+    padding, and loss mask generation for multimodal sequences.
+    """
+
+    def __init__(
+        self,
+        is_train,
+        multimodal_io,
+        vocab,
+        vocab_intervals,
+        audio_input: str = "continuous_audio",
+        audio_output: str = "discrete_audio",
+        loss_region: str = "assistant",
+        batchfy_method: str = "bucket",
+        audio_cfg: float = 0.0,
+    ):
+        self.is_train = is_train
+
+        # (1) keep all multimodal_io
+        self.multimodal_io = multimodal_io
+        self.audio_input = audio_input
+        self.audio_output = audio_output
+        self.loss_region = loss_region
+        self.batchfy_method = batchfy_method
+        self.audio_cfg = audio_cfg
+
+        # (2) vocabulary
+        self.vocab = vocab
+        self.vocab_intervals = vocab_intervals
+        self.pad_id = self.vocab.index("<|pad|>")
+
+        possible_num_stream = [
+            io.num_stream() for io in multimodal_io.values() if io.is_discrete
+        ]
+        if len(possible_num_stream) == 0:
+            raise ValueError("You should have at least one discrete multimodal IO")
+        self.num_stream = max(possible_num_stream)
+
+    def find_length(self, key, data_dict):
+        """Quickly compute sequence length without full preprocessing.
+
+        Counts tokens for BOS, role/modality markers, content, and EOS/EOT.
+        Used for efficient batch construction.
+        """
+        task, _, _ = key
+        messages = self._apply_chat_template(task, data_dict)
+
+        # (1) <bos>
+        length = 1
+
+        # (2) each message, consider role, modality and end of <eot>/<eos>
+        for _, this_io, this_data in messages:
+            length += 3
+            length += self.multimodal_io[this_io].find_length(this_data)
+
+        return length
+
+    def collate_fn(self, data_lst):
+        """Batch multiple samples for training.
+
+        Processes each sample, pads sequences to same length, and organizes
+        continuous features by modality. Returns dict ready for model forward.
+
+        The return dict value should always in the format of either tensor or
+        list of strings. No nested format is allowed.
+        """
+        if self.batchfy_method not in ["bucket", "pack"]:
+            raise NotImplementedError("Batchfy method only support bucket and pack")
+
+        return_dict = dict()
+
+        # (1) single-example preprocessing
+        data_dicts = []
+        return_dict["keys"] = []
+        for key, data_dict in data_lst:
+            try:
+                processed_data_dict = self.preprocessing(key, data_dict)
+                data_dicts.append(processed_data_dict)
+                return_dict["keys"].append(key)
+            except Exception as e:
+                print(f"Error <{e}> processing sample <{key}>, <{data_dict}>")
+        
+        # data_dicts = [self.preprocessing(key, data_dict) for key, data_dict in data_lst]
+        # return_dict["keys"] = [key for key, _ in data_lst]
+        
+        if len(data_dicts) == 0:
+            raise ValueError("No valid samples after preprocessing")
+        elif len(data_dicts) != len(data_lst):
+            print(f"Discarded {len(data_lst) - len(data_dicts)} samples due to invalid audio: original length {len(data_lst)}, after preprocessing {len(data_dicts)}")
+
+
+        # (2) Process token sequences and masks
+        seqs, loss_masks, seq_lens, position_ids = [], [], [0], []
+        for data_dict in data_dicts:
+            seq, loss_mask = data_dict["sequence"], data_dict["loss_mask"]
+            seqs.append(torch.from_numpy(seq))
+            loss_masks.append(torch.from_numpy(loss_mask))
+            seq_lens.append(seq_lens[-1] + len(seq))
+            position_ids.append(torch.arange(len(seq)).long())
+
+        if self.batchfy_method == "bucket":
+            seqs, _ = pad_list(seqs)
+            loss_masks, _ = pad_list(loss_masks)
+
+        else:  # "pack"
+            seqs = torch.cat(seqs, dim=0).unsqueeze(0)
+            loss_masks = torch.cat(loss_masks, dim=0).unsqueeze(0)
+            position_ids = torch.cat(position_ids, dim=0)
+            return_dict["position_ids"] = position_ids.unsqueeze(0)
+
+        return_dict["seqs"] = seqs
+        return_dict["loss_masks"] = loss_masks
+
+        # (3) Process continuous feats
+        conti_feats_dict = dict()
+        for b_idx, (data_dict, seq_start) in enumerate(zip(data_dicts, seq_lens[:-1])):
+            for this_io, start, length, feat in data_dict["conti_feats"]:
+                if self.batchfy_method == "pack":
+                    b_idx = 0
+                    start = start + seq_start
+
+                if this_io not in conti_feats_dict:
+                    conti_feats_dict[this_io] = [[], []]  # (b_idx, start, length), feat
+
+                conti_feats_dict[this_io][0].append((b_idx, start, length))
+                conti_feats_dict[this_io][1].append(feat)
+
+        for this_io, (indices, feats) in conti_feats_dict.items():
+            return_dict[f"{this_io}_indices"] = torch.Tensor(indices).long()
+
+            # print("--------------- Inspect feats -----------------")
+            # for feat in feats:
+            #     print(f"Feat shape: {feat.shape}")
+            #     print(f"Feat dtype: {feat.dtype}")
+            #     print(f"Feat device: {feat.device}")
+            # print("--------------------------------")
+
+            """
+            --------------- Inspect feats -----------------
+            Feat shape: (160000, 1)
+            Feat dtype: float32
+            """
+
+            return_dict[f"{this_io}_feats"], return_dict[f"{this_io}_lengths"] = (
+                pad_list(feats)
+            )
+
+        return return_dict
+
+    def preprocessing(self, key, data_dict):
+        """Convert single raw data dict into training-ready format.
+
+        Applies chat template, tokenizes content, adds special tokens,
+        and creates loss masks. Returns dict with sequences and features.
+        """
+        # (1) convert to messages
+        task, _, _ = key
+        messages = self._apply_chat_template(task, data_dict)
+
+        # (2) initialize
+        seq = [self.special_token("<|bos|>")]
+        conti_feats = list()
+        loss_masks = [self.special_mask(0.0)]
+        accum_length = 1
+
+        # (3) loop on each message
+        # Determine where to place EOT tokens (when consecutive msgs have same role)
+        apply_eots = [
+            msg1[0] == msg2[0] for msg1, msg2 in zip(messages[:-1], messages[1:])
+        ] + [False]
+        for apply_eot, (role, this_io, this_data) in zip(apply_eots, messages):
+            apply_loss = float(role == "assistant" or self.loss_region == "all")
+            special_mask = self.special_mask(apply_loss)
+
+            # (3.1) role and modality
+            seq.append(self.special_token(f"<|{role}|>"))
+            loss_masks.append(special_mask)
+
+            modality = self.multimodal_io[this_io].modality
+            if modality == "audio":
+                # determine audio vs speech by task name
+                if task in ["caption_to_audio", "audio_to_caption", "audio_to_conversation", "audio_only"]:
+                    seq.append(self.special_token(f"<|audio|>"))
+                elif task in ["transcription_to_speech", "speech_to_transcription"]:
+                    seq.append(self.special_token(f"<|speech|>"))
+                else:
+                    print(f"Not supported task: {task}; use <|audio|> as modality")
+                    seq.append(self.special_token(f"<|{modality}|>"))
+            else:
+                seq.append(self.special_token(f"<|{modality}|>"))
+
+            loss_masks.append(special_mask)
+
+            accum_length += 2
+
+            # (3.2) the exact data processing
+            this_seq, conti_feat, loss_mask = self.multimodal_io[this_io].preprocess(
+                this_data
+            )
+            assert this_seq.shape == loss_mask.shape
+
+            # print("--------------- Inspect this_seq -----------------")
+            # print(f"this_seq: {this_seq}")
+            # print(f"this_seq[100:110]: {this_seq[100:110]}")
+            # print("--------------------------------")
+
+            # (3.3) this_seq - adjust token IDs and pad to match stream count
+            if self.multimodal_io[this_io].is_discrete:
+                modality_bias = self.vocab_intervals[this_io][0][0]
+                this_seq = np.where(
+                    this_seq == self.pad_id, self.pad_id, this_seq + modality_bias
+                )
+            # Pad to num_stream if current IO has fewer streams
+            if this_seq.shape[1] < self.num_stream:
+                pad_size = self.num_stream - this_seq.shape[1]
+                this_seq = np.pad(this_seq, ((0, 0), (0, pad_size)))
+            seq.append(this_seq)
+
+            # (3.4) conti_feats
+            if conti_feat is not None:
+                length, feat = conti_feat
+                conti_feats.append((this_io, accum_length, length, feat))
+
+            # (3.5) loss_mask - pad and apply based on role
+            # Pad loss mask to match num_stream dimensions
+            if loss_mask.shape[1] < self.num_stream:
+                pad_size = self.num_stream - loss_mask.shape[1]
+                loss_mask = np.pad(loss_mask, ((0, 0), (0, pad_size)))
+            loss_masks.append(loss_mask * apply_loss)
+
+            accum_length += this_seq.shape[0]
+
+            # (3.6) <eot> or <eos>
+            if apply_eot:
+                seq.append(self.special_token("<|eot|>"))
+            else:
+                seq.append(self.special_token("<|eos|>"))
+            loss_masks.append(special_mask)
+            accum_length += 1
+
+        if random.random() < self.audio_cfg and self.is_train:
+            seq, loss_masks, conti_feats = self._apply_cfg(
+                seq, loss_masks, conti_feats, messages
+            )
+
+        # (4) concat
+        seq = np.concatenate(seq, axis=0)
+        loss_mask = np.concatenate(loss_masks, axis=0)
+
+        data = {
+            "sequence": seq,
+            "conti_feats": conti_feats,
+            "loss_mask": loss_mask,
+        }
+
+        # self.diagnose(data) # uncomment this for debug
+        return data
+
+    def diagnose(self, data):
+        """Print human-readable representation of processed data for debugging.
+
+        Shows tokens, loss masks, and continuous feature info frame by frame.
+        """
+        seq = data["sequence"]
+        loss_mask = data["loss_mask"]
+        conti_feats = data["conti_feats"]
+
+        print("---------------- Seq ----------------")
+        print(f"Seq[100:110]: {seq[100:110]}")
+        print("--------------------------------")
+
+        print("---------------- Loss mask ----------------")
+        print(f"Loss mask[100:110]: {loss_mask[100:110]}")
+        print("--------------------------------")
+
+        for i, (s, m) in enumerate(zip(seq, loss_mask)):
+            s_decoded = [self.vocab[_s] for _s in s.tolist()]
+            m = m.tolist()
+            print(f"Frame {i} | seq: {s} | token: {s_decoded} | weight: {m}")
+
+        for this_io, conti_start, length, feat in conti_feats:
+            print(
+                f"Conti feats: modality={this_io}, conti_feat={conti_start}, "
+                f"length={length}, feat={feat.shape}"
+            )
+
+        raise ValueError("End of diagnose")
+
+    def special_mask(self, value):
+        """Create loss mask for special tokens (1 frame, multi-stream).
+
+        Only first stream has the actual value, others are zero.
+        """
+        retval = np.zeros((1, self.num_stream)).astype(np.float32)
+        retval[0, 0] = value
+        return retval
+
+    def special_token(self, token):
+        """Convert special token string to multi-stream token array.
+
+        Places token ID in first stream, padding tokens in other streams.
+        """
+        num_special_token = self.vocab_intervals["special_token"][0][1]
+        special_tokens = self.vocab[:num_special_token]
+        token_id = special_tokens.index(token)
+        retval = np.ones((1, self.num_stream)).astype(np.int64) * self.pad_id
+        retval[0, 0] = token_id
+        return retval
+    
+    @staticmethod
+    def _reformat_data_dict(data_dict):
+        """
+        data_dict is a dict with keys audio and text. Now we turn them into audio1, text1, ... based on order
+        """
+        new_data_dict = dict()
+        audio_index = 1
+        for key, value in data_dict.items():
+            if key == "audio":
+                new_data_dict[f"audio{audio_index}"] = value
+                audio_index += 1
+        
+        list_of_texts = data_dict["text"]
+        text_index = 1
+        for row in list_of_texts:
+            if row[1] == "text":
+                new_data_dict[f"text{text_index}"] = row[2]
+                text_index += 1
+        
+        return new_data_dict
+
+    def _apply_chat_template(self, task, data_dict):
+        """Convert data dict to list of (role, io_type, data) messages.
+
+        Either uses provided dialogue or constructs from task template.
+        Determines appropriate IO type based on role and data entry name.
+        """
+        if "dialogue" in data_dict:
+            if len(data_dict) != 1:
+                raise ValueError(
+                    "If dialogue exist, there should be no more other entries"
+                )
+            if not self.is_train:
+                assert all([msg[0] != "assistant" for msg in data_dict["dialogue"]]), (
+                    "during inference, input dialogue should not contain "
+                    "model output (assistant message)"
+                )
+            return data_dict["dialogue"]
+        else:
+            # print("--------------- Inspect data_dict -----------------")
+            # print("before reformat: ", data_dict)
+            data_dict = self._reformat_data_dict(data_dict)  # hack for audio/text --> audio1/text1
+            # print("after reformat: ", data_dict)
+            # print("--------------------------------")
+
+            task_config = UALM_TASK_CONFIGS[task]
+            messages = list()
+            for role, entry in task_config:
+                # When inference, only process the input information (user and system)
+                if role == "assistant" and not self.is_train:
+                    break
+
+                # Select IO type based on entry name and role
+                if bool(re.match(r"^audio", entry)):
+                    # User/system use input audio IO, assistant uses output audio IO
+                    if role == "user" or role == "system":
+                        this_io = self.audio_input
+                    else:
+                        this_io = self.audio_output
+                elif bool(re.match(r"^text", entry)):
+                    this_io = "text"
+                else:
+                    raise ValueError(f"Not supported data entry in template: {entry}")
+
+                this_data = data_dict[entry]
+                message = (role, this_io, this_data)
+                messages.append(message)
+            return messages
+
+    def _apply_cfg(self, seq, loss_masks, conti_feats, messages):
+        audio_idx = [
+            i
+            for i, (role, modality, _) in enumerate(messages)
+            if role == "assistant" and modality == self.audio_output
+        ]
+
+        if len(audio_idx) == 0:  # If no valid audio output segment, keep untouched
+            return seq, loss_masks, conti_feats
+
+        # NOTE(Jinchuan): Only randomly keep one audio output segment, and keep all
+        # other segments as 0
+        # NOTE(Jinchuan): seq and loss_masks: start with an BOS;
+        # Each segment contains 4 items: 3 special tokens + 1 real segment
+        audio_idx = random.choice(audio_idx)
+        for i in range(len(messages)):
+            if i == audio_idx:
+                continue
+
+            for j in range(4):
+                k = i * 4 + j + 1
+                seq[k] *= 0
+                loss_masks[k] *= 0
+
+        seq[0] *= 0
+        loss_masks[0] *= 0
+        conti_feats = [feat for feat in conti_feats if feat[0] == self.audio_output]
+
+        return seq, loss_masks, conti_feats

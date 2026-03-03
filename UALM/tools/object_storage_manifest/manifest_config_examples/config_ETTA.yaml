@@ -1,0 +1,55 @@
+# ========================================================================
+# Batch Manifest & Tarball Creation: Text-to-Audio Datasets
+# ========================================================================
+# This YAML configuration file orchestrates the end-to-end creation of
+# sharded, tarball-based datasets from existing text-to-audio manifests
+# (e.g., .jsonl files).
+#
+# The pipeline is as follows for each dataset defined below:
+# 1. Reads a source manifest (e.g., a .jsonl file with audio paths and captions).
+# 2. Processes entries in parallel, verifying audio and extracting metadata.
+# 3. Creates a set of de-duplicated, uncompressed TAR archives in `tarball_output_dir`.
+# 4. Creates a final set of NDJSON manifests in `manifest_output_dir` that
+#    contain all original metadata plus the new tarball path and byte offsets.
+#
+# Usage:
+#   python batch_create_manifests.py --config manifest_config_examples/config_ETTA.yaml
+#
+# Global settings applied to all datasets
+common:
+  # S3 Configuration (for S3-based paths in the final manifest)
+  # -----------------------------------------------------------
+  s3_bucket: text_to_audio         # Target S3 bucket if `convert_to_s3` is true.
+  s3_prefix: null                  # Optional S3 prefix path (e.g., "datasets").
+  convert_to_s3: true              # If true, `audio.path` in the final manifest will be an S3 path.
+                                   # If false, it remains a local path.
+  
+  # Processing Configuration  
+  # -----------------------
+  verify_audio: true               # REQUIRED. Extracts metadata (duration, sr, etc.) needed for training.
+  num_workers: 32                # Number of parallel workers for manifest processing.
+  shard_size: 10000                # Max number of entries per output manifest shard.
+  timeout_seconds: 0               # Subprocess timeout in seconds (0 = no timeout, recommended for large datasets).
+  verbose_logging: false           # Enable verbose logging for debugging.
+  
+  # Auto-conversion Settings (for sources with non-WAV files)
+  # ---------------------------------------------------------
+  auto_convert_wav: true          # If true, converts all source audio to WAV format first.
+  auto_convert_wav_remove_after: true  # If true, remove converted wav audio after
+  audio_dest_dir: /path/to/store/wav/files # Destination for converted WAVs.
+  
+  # Final Output Directories
+  # ------------------------
+  manifest_output_dir: /path/to/store/text_to_audio  # Final destination for the enriched NDJSON manifests and index files.
+  tarball_output_dir: /path/to/store/text_to_audio  # Final destination for the de-duplicated TAR archives.
+
+# List of datasets to process
+datasets:
+  - name: subset1_name
+    input: /path/to/text_to_audio/subset1.jsonl
+    audio_source_dir: /path/to/wav_folder
+    location_key: location
+    caption_key: caption
+    s3_dataset_dir: subset1_name
+    prefix: train
+    
